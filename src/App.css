@@ -261,3 +261,46 @@ footer {
   color: #8a919c;
   font-weight: 400;
 }
+
+.cap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cap-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #e2e6ea;
+  border-radius: 10px;
+}
+
+.cap-row.out {
+  background: #fdf0ef;
+  border-color: #e5b8b2;
+}
+
+.cap-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.cap-info strong {
+  display: block;
+  font-size: 14px;
+}
+
+.cap-info small {
+  color: #8a919c;
+}
+
+.cap-row input {
+  width: 110px;
+}
+
+.panel h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}

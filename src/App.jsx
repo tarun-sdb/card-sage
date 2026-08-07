@@ -5,13 +5,14 @@ import { recommend, shouldSkipCard } from "./engine/recommend";
 import "./App.css";
 
 const WALLET_KEY = "card-sage-wallet";
+const SPENT_KEY = "card-sage-spent";
 
-function loadWallet() {
+function load(key, fallback) {
   try {
-    const saved = JSON.parse(localStorage.getItem(WALLET_KEY));
-    return Array.isArray(saved) ? saved : [];
+    const saved = JSON.parse(localStorage.getItem(key));
+    return saved ?? fallback;
   } catch {
-    return [];
+    return fallback;
   }
 }
 
@@ -19,14 +20,17 @@ function App() {
   const [actionId, setActionId] = useState(ACTIONS[0].id);
   const [appId, setAppId] = useState(ACTIONS[0].apps[0].id);
   const [amount, setAmount] = useState(500);
-  const [spentText, setSpentText] = useState("");
-  const [walletKeys, setWalletKeys] = useState(loadWallet);
+  const [walletKeys, setWalletKeys] = useState(() => load(WALLET_KEY, []));
+  const [spent, setSpent] = useState(() => load(SPENT_KEY, {}));
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     localStorage.setItem(WALLET_KEY, JSON.stringify(walletKeys));
   }, [walletKeys]);
+  useEffect(() => {
+    localStorage.setItem(SPENT_KEY, JSON.stringify(spent));
+  }, [spent]);
 
   const action = ACTIONS.find((a) => a.id === actionId);
   const app = action.apps.find((a) => a.id === appId) || action.apps[0];
@@ -46,15 +50,6 @@ function App() {
       : [];
   }, [query]);
 
-  const spent = useMemo(() => {
-    const m = {};
-    spentText.split(",").forEach((pair) => {
-      const [k, v] = pair.split(":").map((s) => s.trim());
-      if (k && v) m[k] = Number(v);
-    });
-    return m;
-  }, [spentText]);
-
   const picks = useMemo(
     () => recommend(wallet, action, app, spent),
     [wallet, action, app, spent]
@@ -72,6 +67,34 @@ function App() {
       keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key]
     );
   };
+
+  const setCardSpent = (cardKey, category, value) => {
+    setSpent((s) => ({
+      ...s,
+      [`${cardKey}:${category}`]: Math.max(0, Number(value) || 0),
+    }));
+  };
+
+  // Capped categories across wallet, one row each, with spent input.
+  const capRows = useMemo(() => {
+    const rows = [];
+    wallet.forEach((c) => {
+      (c.rewards || [])
+        .filter((r) => r.monthlyCapRs != null)
+        .forEach((r) => {
+          const key = `${c.cardKey}:${r.category}`;
+          rows.push({
+            key,
+            cardKey: c.cardKey,
+            cardName: c.name,
+            category: r.category,
+            cap: r.monthlyCapRs,
+            spent: spent[key] || 0,
+          });
+        });
+    });
+    return rows;
+  }, [wallet, spent]);
 
   return (
     <div className="app">
@@ -185,15 +208,37 @@ function App() {
       </section>
 
       <section className="panel">
-        <label>
-          Spent this month per card:category (debug, e.g. <code>sbi-cashback:UTILITY_BILLS:3000</code>)
-          <input
-            type="text"
-            value={spentText}
-            placeholder="cardKey:CATEGORY:amount, ..."
-            onChange={(e) => setSpentText(e.target.value)}
-          />
-        </label>
+        <h3>Monthly caps — spent so far</h3>
+        {capRows.length === 0 ? (
+          <p className="muted">No capped categories in wallet.</p>
+        ) : (
+          <div className="cap-list">
+            {capRows.map((row) => {
+              const pct = row.spent / row.cap;
+              const out = row.spent >= row.cap;
+              return (
+                <div key={row.key} className={`cap-row${out ? " out" : ""}`}>
+                  <div className="cap-info">
+                    <strong>{row.cardName}</strong>
+                    <small>{row.category} · cap ₹{row.cap}/mo</small>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={row.spent || ""}
+                    placeholder="0"
+                    onChange={(e) =>
+                      setCardSpent(row.cardKey, row.category, e.target.value)
+                    }
+                  />
+                  <span className={out ? "cap-out" : "cap"}>
+                    {out ? "exhausted" : `₹${Math.max(0, row.cap - row.spent)} left`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <footer>
