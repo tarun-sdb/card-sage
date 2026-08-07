@@ -173,3 +173,91 @@ footer {
   font-size: 12px;
   color: #8a919c;
 }
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.wallet-btn {
+  border: 1px solid #2f6fed;
+  background: #fff;
+  color: #2f6fed;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.empty-wallet {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 24, 30, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 40px 16px;
+  z-index: 10;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 14px;
+  max-width: 520px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-head h3 {
+  margin: 0;
+}
+
+.close {
+  border: none;
+  background: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #5b6470;
+}
+
+.search {
+  margin: 12px 0;
+}
+
+.card-list {
+  overflow-y: auto;
+}
+
+.card-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f2f4;
+  cursor: pointer;
+}
+
+.card-option small {
+  display: block;
+  color: #8a919c;
+  font-weight: 400;
+}

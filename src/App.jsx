@@ -1,30 +1,50 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dataset from "./data/cards.json";
 import { ACTIONS } from "./engine/actions";
 import { recommend, shouldSkipCard } from "./engine/recommend";
 import "./App.css";
 
-// Demo wallet — pick any cards by name. Expand later: pick from full list.
-const DEMO_WALLET = [
-  "hdfc-phonepe-ultimo",
-  "hdfc-swiggy",
-  "icici-amazon-pay",
-  "icici-hpcl-coral",
-];
+const WALLET_KEY = "card-sage-wallet";
+
+function loadWallet() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WALLET_KEY));
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
 
 function App() {
   const [actionId, setActionId] = useState(ACTIONS[0].id);
   const [appId, setAppId] = useState(ACTIONS[0].apps[0].id);
   const [amount, setAmount] = useState(500);
   const [spentText, setSpentText] = useState("");
+  const [walletKeys, setWalletKeys] = useState(loadWallet);
+  const [picking, setPicking] = useState(false);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    localStorage.setItem(WALLET_KEY, JSON.stringify(walletKeys));
+  }, [walletKeys]);
 
   const action = ACTIONS.find((a) => a.id === actionId);
   const app = action.apps.find((a) => a.id === appId) || action.apps[0];
 
   const wallet = useMemo(
-    () => dataset.cards.filter((c) => DEMO_WALLET.includes(c.cardKey)),
-    []
+    () => dataset.cards.filter((c) => walletKeys.includes(c.cardKey)),
+    [walletKeys]
   );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q
+      ? dataset.cards.filter(
+          (c) =>
+            c.name.toLowerCase().includes(q) || c.issuer.toLowerCase().includes(q)
+        )
+      : [];
+  }, [query]);
 
   const spent = useMemo(() => {
     const m = {};
@@ -47,12 +67,32 @@ function App() {
     setAppId(a.apps[0].id);
   };
 
+  const toggleCard = (key) => {
+    setWalletKeys((keys) =>
+      keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key]
+    );
+  };
+
   return (
     <div className="app">
-      <header>
-        <h1>Card Sage</h1>
-        <p>Which card for this purchase? India cashback, fees and caps.</p>
+      <header className="header-row">
+        <div>
+          <h1>Card Sage</h1>
+          <p>Which card for this purchase? India cashback, fees and caps.</p>
+        </div>
+        <button className="wallet-btn" onClick={() => setPicking(true)}>
+          Wallet ({wallet.length})
+        </button>
       </header>
+
+      {wallet.length === 0 && (
+        <div className="panel empty-wallet">
+          No cards in wallet.{" "}
+          <button className="btn" onClick={() => setPicking(true)}>
+            Add your cards
+          </button>
+        </div>
+      )}
 
       <section className="actions">
         {ACTIONS.map((a) => (
@@ -94,7 +134,13 @@ function App() {
       </section>
 
       <section className="results">
-        {skip ? (
+        {wallet.length === 0 ? (
+          <div className="card-pick skip">
+            <div>
+              <strong>Add cards first.</strong> Wallet empty — pick cards you own.
+            </div>
+          </div>
+        ) : skip ? (
           <div className="card-pick skip">
             <div>
               <strong>Skip the card.</strong> {action.label} — bank app / UPI /
@@ -156,6 +202,42 @@ function App() {
           <a href="https://cardadvisor.in/data">cardadvisor.in/data</a>
         </p>
       </footer>
+
+      {picking && (
+        <div className="modal-backdrop" onClick={() => setPicking(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>Your cards</h3>
+              <button className="close" onClick={() => setPicking(false)}>✕</button>
+            </div>
+            <input
+              className="search"
+              placeholder="Search by name or bank…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              autoFocus
+            />
+            <div className="card-list">
+              {filtered.slice(0, 60).map((c) => (
+                <label key={c.cardKey} className="card-option">
+                  <input
+                    type="checkbox"
+                    checked={walletKeys.includes(c.cardKey)}
+                    onChange={() => toggleCard(c.cardKey)}
+                  />
+                  <span>
+                    <strong>{c.name}</strong>
+                    <small>{c.issuer} · {c.rewardRateMaxPct}% max</small>
+                  </span>
+                </label>
+              ))}
+              {filtered.length === 0 && (
+                <p className="muted">Type to search 280 cards.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
