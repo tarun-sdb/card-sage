@@ -20,7 +20,7 @@ const MAP = {
   "SHELL": "FUEL", "NAYARA ENERGY": "FUEL",
   // utility
   "PHONEPE": "UTILITY_BILLS", PAYTM: "UTILITY_BILLS", "GOOGLE PAY": "UTILITY_BILLS",
-  GPay: "UTILITY_BILLS", "JIO": "UTILITY_BILLS", "JIOFIBER": "UTILITY_BILLS",
+  "GPAY": "UTILITY_BILLS", "JIO": "UTILITY_BILLS", "JIOFIBER": "UTILITY_BILLS",
   AIRTEL: "UTILITY_BILLS", "AIRTEL DIGITAL TV": "UTILITY_BILLS", VI: "UTILITY_BILLS",
   "VODAFONE": "UTILITY_BILLS", "BSES": "UTILITY_BILLS", "TATA POWER": "UTILITY_BILLS",
   "ADANI ELECTRICITY": "UTILITY_BILLS", "MSEB": "UTILITY_BILLS", "CESC": "UTILITY_BILLS",
@@ -39,18 +39,22 @@ const MAP = {
   "BYJUS": "EDUCATION", "VEDANTU": "EDUCATION", "UPGRAD": "EDUCATION", "UNACADEMY": "EDUCATION",
 };
 
-// Normalize: strip dots/whitespace, uppercase. "makemytrip.com" -> "MAKEMYTRIP".
+// Normalize: uppercase, collapse dots/whitespace. "makemytrip.com" -> "MAKEMYTRIP COM".
 function normalize(name) {
   return (name || "").toUpperCase().replace(/[.\s]+/g, " ").trim();
 }
+
+// Escape regex specials in MAP keys (e.g. "DISNEY+").
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export function merchantCategory(merchant) {
   if (!merchant) return null;
   const n = normalize(merchant);
   if (MAP[n]) return MAP[n];
-  // Prefix match for multi-word merchants: "AMAZON PAY IZMOBILE" etc.
+  // Word-boundary substring match: "SWIGGY LIMITED" -> DINING,
+  // "WWW AMAZON IN" -> ONLINE_SHOPPING.
   for (const key of Object.keys(MAP)) {
-    if (n.startsWith(key)) return MAP[key];
+    if (new RegExp(`\\b${esc(key)}\\b`).test(n)) return MAP[key];
   }
   return null;
 }
