@@ -2,7 +2,13 @@
   "expo": {
     "name": "Card Sage",
     "slug": "card-sage",
+    "owner": "tarun-sdbs-team",
     "version": "1.0.0",
+    "extra": {
+      "eas": {
+        "projectId": "6ca15afc-f2a9-44fc-aa7b-744b1912a118"
+      }
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
