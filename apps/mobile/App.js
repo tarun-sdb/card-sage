@@ -34,6 +34,7 @@ export default function App() {
       const parsed = messages
         .map((m) => ({ ...parseSms(m.sender, m.body), date: m.date }))
         .filter((t) => t.amount != null);
+      console.log('[card-sage] parsed merchants:', JSON.stringify(parsed.map((t) => t.merchant)));
       setTxns(parsed);
       setStatus(`Parsed ${parsed.length} card transactions from ${messages.length} messages.`);
     } catch (e) {
