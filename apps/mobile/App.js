@@ -26,9 +26,17 @@ export default function App() {
   useEffect(() => {
     AsyncStorage.getItem(WALLET_KEY).then((raw) => {
       if (raw) {
-        const keys = JSON.parse(raw);
-        setWallet(cardsData.cards.filter((c) => keys.includes(c.cardKey)));
-        setSelected(Object.fromEntries(keys.map((k) => [k, true])));
+        const saved = JSON.parse(raw);
+        // Migration: old format was ["cardKey", ...] — new is [{cardKey, last4}].
+        const entries = saved.map((e) =>
+          typeof e === 'string' ? { cardKey: e, last4: '' } : e
+        );
+        setWallet(
+          entries
+            .map((e) => ({ ...cardsData.cards.find((c) => c.cardKey === e.cardKey), last4: e.last4 }))
+            .filter((e) => e.cardKey)
+        );
+        setSelected(Object.fromEntries(entries.map((e) => [e.cardKey, e.last4])));
       } else {
         setPickerOpen(true); // first run: pick cards
       }
@@ -36,17 +44,26 @@ export default function App() {
   }, []);
 
   const openPicker = () => {
-    setSelected(Object.fromEntries(wallet.map((c) => [c.cardKey, true])));
+    setSelected(Object.fromEntries(wallet.map((c) => [c.cardKey, c.last4 || ''])));
     setQuery('');
     setPickerOpen(true);
   };
 
   const saveWallet = () => {
-    const cards = cardsData.cards.filter((c) => selected[c.cardKey]);
+    const cards = cardsData.cards
+      .filter((c) => selected[c.cardKey] !== undefined)
+      .map((c) => ({ ...c, last4: (selected[c.cardKey] || '').trim() }));
     setWallet(cards);
-    AsyncStorage.setItem(WALLET_KEY, JSON.stringify(cards.map((c) => c.cardKey)));
+    AsyncStorage.setItem(
+      WALLET_KEY,
+      JSON.stringify(cards.map((c) => ({ cardKey: c.cardKey, last4: c.last4 })))
+    );
     setPickerOpen(false);
   };
+
+  // SMS gives only bank + last4. Match against the registered wallet.
+  const matchedFor = (t) =>
+    t.cardLast4 ? wallet.find((w) => w.last4 && w.last4 === t.cardLast4) : null;
 
   const actionFor = (cat) => (cat ? ACTIONS.find((a) => a.category === cat) : UPI_ACTION);
 
@@ -80,14 +97,16 @@ export default function App() {
   };
 
   // Spend per card+reward-row, for the cap meter. Routed through rewardFor so
-  // UPI spends land on the UPI-scoped row that actually earns.
+  // UPI spends land on the UPI-scoped row that actually earns. When the SMS
+  // last4 matches a registered card, only that card's cap depletes.
   const spent = useMemo(() => {
     const m = {};
     for (const t of txns) {
       const action = actionFor(merchantCategory(t.merchant));
       if (!action) continue;
       const app = action.apps[0];
-      for (const c of wallet) {
+      const scope = matchedFor(t) ? [matchedFor(t)] : wallet;
+      for (const c of scope) {
         const r = rewardFor(c, action, app);
         if (r && r.monthlyCapRs != null) {
           const key = `${c.cardKey}:${r.category}`;
@@ -103,8 +122,12 @@ export default function App() {
       const cat = merchantCategory(t.merchant);
       const action = actionFor(cat);
       const app = action.apps[0];
-      const picks = recommend(wallet, action, app, spent);
-      return { t, cat, upi: !cat, top: picks[0] };
+      const matched = matchedFor(t);
+      const scope = matched ? [matched] : wallet;
+      const picks = recommend(scope, action, app, spent);
+      // When the used card is known, also show the best alternative.
+      const best = matched ? recommend(wallet, action, app, spent)[0] : null;
+      return { t, cat, upi: !cat, matched, top: picks[0], best };
     });
   }, [txns, wallet, spent]);
 
@@ -131,13 +154,21 @@ export default function App() {
               <Text style={styles.amt}>₹{item.t.amount.toLocaleString('en-IN')}</Text>
             </Text>
             <Text style={styles.meta}>
-              {item.cat || 'UPI'} · card {item.t.cardLast4 || '?'}
+              {item.cat || 'UPI'} ·{' '}
+              {item.matched
+                ? item.matched.name.replace(/ (Credit|Debit|Charge) Card$/, '')
+                : 'card ' + (item.t.cardLast4 || '?')}
             </Text>
             {item.top ? (
               <View>
                 <Text style={styles.rec}>
                   ✓ {item.top.card.name} — {item.top.reward.netPct}%
                 </Text>
+                {item.best && item.best.card.cardKey !== item.top.card.cardKey ? (
+                  <Text style={styles.best}>
+                    best: {item.best.card.name} — {item.best.reward.netPct}%
+                  </Text>
+                ) : null}
                 {item.top.cap != null ? (
                   <View style={styles.meter}>
                     <View
@@ -181,18 +212,37 @@ export default function App() {
             keyExtractor={(c) => c.cardKey}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => {
-              const on = !!selected[item.cardKey];
+              const on = selected[item.cardKey] !== undefined;
               return (
                 <View style={[styles.cardRow, on && styles.cardRowOn]}>
-                  <Text style={styles.cardName}>{item.name}</Text>
-                  <Text style={styles.cardSub}>
-                    {item.issuer} · {item.tier}
-                    {item.lifetimeFree ? '' : ` · ₹${item.annualFeeRs}/yr`}
-                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardName}>{item.name}</Text>
+                    <Text style={styles.cardSub}>
+                      {item.issuer} · {item.tier}
+                      {item.lifetimeFree ? '' : ` · ₹${item.annualFeeRs}/yr`}
+                    </Text>
+                    {on ? (
+                      <TextInput
+                        style={styles.last4}
+                        placeholder="last 4 digits of your card (optional — matches SMS)"
+                        keyboardType="number-pad"
+                        maxLength={4}
+                        value={selected[item.cardKey]}
+                        onChangeText={(v) =>
+                          setSelected((s) => ({ ...s, [item.cardKey]: v }))
+                        }
+                      />
+                    ) : null}
+                  </View>
                   <Button
                     title={on ? 'Remove' : 'Add'}
                     onPress={() =>
-                      setSelected((s) => ({ ...s, [item.cardKey]: !s[item.cardKey] }))
+                      setSelected((s) => {
+                        const n = { ...s };
+                        if (s[item.cardKey] !== undefined) delete n[item.cardKey];
+                        else n[item.cardKey] = '';
+                        return n;
+                      })
                     }
                   />
                 </View>
@@ -222,6 +272,7 @@ const styles = StyleSheet.create({
   amt: { color: '#1e7d32' },
   meta: { fontSize: 12, color: '#666', marginTop: 2 },
   rec: { fontSize: 13, color: '#2f6fed', marginTop: 4, fontWeight: '600' },
+  best: { fontSize: 12, color: '#1e7d32', marginTop: 2 },
   norec: { fontSize: 13, color: '#a05c00', marginTop: 4 },
   meter: { marginTop: 6, backgroundColor: '#e8e8ee', borderRadius: 4, overflow: 'hidden' },
   meterFill: { height: 6, backgroundColor: '#2f6fed' },
@@ -238,4 +289,8 @@ const styles = StyleSheet.create({
   cardRowOn: { borderLeftWidth: 3, borderLeftColor: '#2f6fed' },
   cardName: { fontSize: 14, fontWeight: '600', flex: 1 },
   cardSub: { fontSize: 11, color: '#888', flex: 1 },
+  last4: {
+    backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 6,
+    padding: 6, marginTop: 6, fontSize: 13,
+  },
 });
