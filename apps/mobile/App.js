@@ -33,7 +33,7 @@ export default function App() {
       const messages = await SmsReader.readSms(200);
       const parsed = messages
         .map((m) => ({ ...parseSms(m.sender, m.body), date: m.date }))
-        .filter((t) => t !== null);
+        .filter((t) => t.amount != null);
       setTxns(parsed);
       setStatus(`Parsed ${parsed.length} card transactions from ${messages.length} messages.`);
     } catch (e) {
