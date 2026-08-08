@@ -8,7 +8,7 @@ import { ACTIONS } from '../../src/engine/actions';
 import { recommend } from '../../src/engine/recommend';
 import { parseSms } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
-import SmsReader from '../../modules/sms-reader/src';
+import SmsReader from './modules/sms-reader';
 
 // Bootstrap: Ultimo card so first run shows real recs. Replace with wallet picker later.
 const BOOTSTRAP_WALLET = ['hdfc-phonepe-ultimo'];
