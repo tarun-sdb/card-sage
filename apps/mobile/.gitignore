@@ -40,4 +40,6 @@ yarn-error.*
 /ios
 /android
 dist/
-�@@C@8
+
+# module build artifacts
+modules/*/android/build/

@@ -3,3 +3,15 @@ apply plugin: 'expo-module-gradle-plugin'
 
 group = 'expo.modules.smsreader'
 version = '0.1.0'
+
+android {
+    namespace 'expo.modules.smsreader'
+    defaultConfig {
+        versionCode 1
+        versionName '0.1.0'
+    }
+}
+
+expoModule {
+    canBePublished false
+}
