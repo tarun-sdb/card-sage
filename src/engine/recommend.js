@@ -41,7 +41,7 @@ export function rewardFor(card, action, app) {
 }
 
 function bestRow(rows) {
-  return rows.reduce((a, b) => (b.ratePct > a.ratePct ? b : a));
+  return rows.length ? rows.reduce((a, b) => (b.ratePct > a.ratePct ? b : a)) : null;
 }
 
 // Rank user's cards for an action+app, minus monthly cap already spent.
