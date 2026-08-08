@@ -1,7 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Button, FlatList, Modal, PermissionsAndroid, Platform, StyleSheet, Text, TextInput, View,
+  Button, FlatList, LayoutAnimation, Modal, PermissionsAndroid, Platform,
+  StyleSheet, Text, TextInput, UIManager, useColorScheme, View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import cardsData from '../../src/data/cards.json';
@@ -15,6 +16,27 @@ import SmsReader from './modules/sms-reader';
 const UPI_ACTION = ACTIONS.find((a) => a.id === 'upi');
 const WALLET_KEY = 'card-sage:wallet';
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// "The Ledger" — color encodes meaning only. earn = winning, warn = min not
+// met / near cap, danger = over cap, muted = unknowable (UPI person pays).
+const palettes = {
+  light: {
+    bg: '#F7F8FA', surface: '#FFFFFF', hairline: '#E5E8EC',
+    text: '#12161C', sub: '#5B6470', amount: '#0E1116',
+    earn: '#16A34A', warn: '#D97706', danger: '#DC2626', muted: '#8A919C',
+    meterTrack: '#E5E8EC',
+  },
+  dark: {
+    bg: '#0E1116', surface: '#161B22', hairline: '#242B33',
+    text: '#EDF0F4', sub: '#9AA4B2', amount: '#FFFFFF',
+    earn: '#22C55E', warn: '#F59E0B', danger: '#EF4444', muted: '#6B7280',
+    meterTrack: '#242B33',
+  },
+};
+
 export default function App() {
   const [txns, setTxns] = useState([]);
   const [status, setStatus] = useState('idle');
@@ -22,6 +44,10 @@ export default function App() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState({});
+
+  const scheme = useColorScheme();
+  const c = palettes[scheme === 'dark' ? 'dark' : 'light'];
+  const styles = useMemo(() => makeStyles(c), [c]);
 
   useEffect(() => {
     AsyncStorage.getItem(WALLET_KEY).then((raw) => {
@@ -89,6 +115,7 @@ export default function App() {
       const parsed = messages
         .map((m) => ({ ...parseSms(m.sender, m.body), date: m.date }))
         .filter((t) => t.amount != null);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setTxns(parsed);
       setStatus(`Parsed ${parsed.length} card transactions from ${messages.length} messages.`);
     } catch (e) {
@@ -136,81 +163,148 @@ export default function App() {
     });
   }, [txns, wallet, spent]);
 
+  // Header: potential cashback from card-matched rows only, bounded by
+  // remaining cap. Labeled "potential" — SMS batch is not a statement.
+  const summary = useMemo(() => {
+    let scanned = 0;
+    let potential = 0;
+    for (const t of txns) {
+      scanned += t.amount;
+      const matched = matchedFor(t);
+      if (!matched) continue;
+      const action = actionFor(merchantCategory(t.merchant));
+      const r = action && rewardFor(matched, action, action.apps[0]);
+      if (!r || (r.minTxnRs && t.amount < r.minTxnRs)) continue;
+      const cap = r.monthlyCapRs;
+      const key = `${matched.cardKey}:${r.category}`;
+      const remaining = cap != null ? Math.max(0, cap - (spent[key] || 0)) : Infinity;
+      potential += Math.min((r.ratePct / 100) * t.amount, remaining);
+    }
+    return { scanned, potential, n: txns.length };
+  }, [txns, wallet, spent]);
+
   const count = Object.keys(selected).filter((k) => selected[k]).length;
+  const shortName = (n) => n.replace(/ (Credit|Debit|Charge) Card$/, '');
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Card Sage</Text>
-      <Text style={styles.sub}>
-        SMS card tracker · {wallet.length ? wallet.length + ' cards' : 'no cards picked'}
-      </Text>
-      <Button title="Change cards" onPress={openPicker} />
-      <Button title="Read recent SMS" onPress={readSms} />
+      <View style={styles.header}>
+        <Text style={styles.logo}>CARD SAGE</Text>
+        <Text style={styles.sub}>
+          {wallet.length ? wallet.length + ' cards' : 'no cards'} · {summary.n} txns ·{' '}
+          ₹{summary.scanned.toLocaleString('en-IN')} scanned
+        </Text>
+        {summary.n > 0 ? (
+          <View style={styles.potentialRow}>
+            <Text style={styles.potentialLabel}>POTENTIAL CASHBACK</Text>
+            <Text style={styles.potentialValue}>
+              ₹{Math.round(summary.potential).toLocaleString('en-IN')}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.actions}>
+        <Button title="Read recent SMS" color={c.earn} onPress={readSms} />
+        <View style={styles.actionGap} />
+        <Button title="Change cards" color={c.muted} onPress={openPicker} />
+      </View>
       {status ? <Text style={styles.status}>{status}</Text> : null}
 
       <FlatList
         data={rows}
         keyExtractor={(_, i) => String(i)}
-        style={{ width: '100%', marginTop: 12 }}
-        renderItem={({ item }) => (
-          <View style={styles.row}>
-            <Text style={styles.merchant}>
-              {item.t.merchant || '(upi)'}{' '}
-              <Text style={styles.amt}>₹{item.t.amount.toLocaleString('en-IN')}</Text>
-            </Text>
-            <Text style={styles.meta}>
-              {item.cat || 'UPI'} ·{' '}
-              {item.matched
-                ? item.matched.name.replace(/ (Credit|Debit|Charge) Card$/, '')
-                : 'card ' + (item.t.cardLast4 || '?')}
-            </Text>
-            {item.top ? (
-              <View>
-                <Text style={styles.rec}>
-                  ✓ {item.top.card.name} — {item.top.reward.netPct}%
-                </Text>
-                {item.best && item.best.card.cardKey !== item.top.card.cardKey ? (
-                  <Text style={styles.best}>
-                    best: {item.best.card.name} — {item.best.reward.netPct}%
-                  </Text>
-                ) : null}
-                {item.top.cap != null ? (
-                  <View style={styles.meter}>
-                    <View
-                      style={[styles.meterFill, {
-                        width: `${Math.min(100, (item.top.used / item.top.cap) * 100)}%`,
-                      }]}
-                    />
-                    <Text style={styles.meterLabel}>
-                      ₹{item.top.used}/{item.top.cap} used
+        style={{ width: '100%', marginTop: 8 }}
+        ItemSeparatorComponent={() => <View style={styles.hairline} />}
+        renderItem={({ item }) => {
+          const verdict = (() => {
+            if (item.top) {
+              const usedPct = item.top.cap != null ? item.top.used / item.top.cap : 0;
+              const vColor = item.top.cap != null
+                ? (usedPct >= 1 ? c.danger : usedPct >= 0.7 ? c.warn : c.earn)
+                : c.earn;
+              return (
+                <View>
+                  <View style={styles.metaRow}>
+                    <Text style={styles.meta}>
+                      {item.cat || 'UPI'}
+                      {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
+                    </Text>
+                    <Text style={[styles.verdict, { color: vColor }]}>
+                      ✓ {shortName(item.top.card.name)} — {item.top.reward.netPct}%
                     </Text>
                   </View>
-                ) : null}
+                  {item.top.cap != null ? (
+                    <View style={styles.meter}>
+                      <View
+                        style={[styles.meterFill, {
+                          width: `${Math.min(100, usedPct * 100)}%`,
+                          backgroundColor: vColor,
+                        }]}
+                      />
+                      <Text style={styles.meterLabel}>
+                        ₹{item.top.used}/{item.top.cap} used
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            }
+            if (item.excluded) {
+              return (
+                <View style={styles.metaRow}>
+                  <Text style={styles.meta}>
+                    {item.cat || 'UPI'}
+                    {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
+                  </Text>
+                  <Text style={[styles.verdict, { color: c.warn }]}>
+                    {shortName(item.excluded.card.name)} — needs ₹{item.excluded.reward.minTxnRs} min
+                  </Text>
+                </View>
+              );
+            }
+            // Unmappable (UPI person pays) or no reward row — quiet, honest.
+            return (
+              <View style={styles.metaRow}>
+                <Text style={styles.meta}>
+                  {item.cat || 'UPI'}
+                  {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
+                </Text>
+                <Text style={[styles.verdict, { color: c.muted }]}>
+                  {item.upi ? 'not a card spend' : 'no reward row'}
+                </Text>
               </View>
-            ) : item.excluded ? (
-              <Text style={styles.norec}>
-                ₹{item.t.amount} txn — {item.excluded.card.name} needs min ₹
-                {item.excluded.reward.minTxnRs} cashback txn
-              </Text>
-            ) : (
-              <Text style={styles.norec}>
-                {item.upi ? 'no UPI cashback card' : 'no reward row'}
-              </Text>
-            )}
-          </View>
-        )}
+            );
+          })();
+          return (
+            <View style={styles.row}>
+              <View style={styles.rowTop}>
+                <Text style={styles.merchant} numberOfLines={1}>
+                  {item.t.merchant || '(upi)'}
+                </Text>
+                <Text style={styles.amt}>₹{item.t.amount.toLocaleString('en-IN')}</Text>
+              </View>
+              {verdict}
+            </View>
+          );
+        }}
         ListEmptyComponent={
-          <Text style={styles.status}>No transactions yet. Tap read SMS.</Text>
+          <Text style={styles.status}>
+            {wallet.length
+              ? 'No transactions yet — read SMS to scan your bank alerts.'
+              : 'Add your cards first — they power every recommendation.'}
+          </Text>
         }
       />
 
       <Modal visible={pickerOpen} animationType="slide">
         <View style={styles.pickerContainer}>
-          <Text style={styles.title}>Your cards</Text>
+          <Text style={styles.logo}>YOUR CARDS</Text>
           <Text style={styles.sub}>Pick every card you own. Recommendations use only these.</Text>
           <TextInput
             style={styles.search}
             placeholder="Search: ultimo, amazon, swiggy…"
+            placeholderTextColor={c.muted}
             value={query}
             onChangeText={setQuery}
             autoFocus
@@ -221,12 +315,13 @@ export default function App() {
             )}
             keyExtractor={(c) => c.cardKey}
             keyboardShouldPersistTaps="handled"
+            ItemSeparatorComponent={() => <View style={styles.hairline} />}
             renderItem={({ item }) => {
               const on = selected[item.cardKey] !== undefined;
               return (
-                <View style={[styles.cardRow, on && styles.cardRowOn]}>
+                <View style={[styles.cardRow, on && { borderLeftColor: c.earn }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.cardName}>{item.name}</Text>
+                    <Text style={[styles.cardName, on && { color: c.earn }]}>{item.name}</Text>
                     <Text style={styles.cardSub}>
                       {item.issuer} · {item.tier}
                       {item.lifetimeFree ? '' : ` · ₹${item.annualFeeRs}/yr`}
@@ -234,7 +329,8 @@ export default function App() {
                     {on ? (
                       <TextInput
                         style={styles.last4}
-                        placeholder="last 4 digits of your card (optional — matches SMS)"
+                        placeholder="last 4 digits (matches SMS)"
+                        placeholderTextColor={c.muted}
                         keyboardType="number-pad"
                         maxLength={4}
                         value={selected[item.cardKey]}
@@ -246,6 +342,7 @@ export default function App() {
                   </View>
                   <Button
                     title={on ? 'Remove' : 'Add'}
+                    color={on ? c.danger : c.earn}
                     onPress={() =>
                       setSelected((s) => {
                         const n = { ...s };
@@ -259,48 +356,65 @@ export default function App() {
               );
             }}
           />
-          <Button title={`Save ${count} card${count === 1 ? '' : 's'}`} onPress={saveWallet} />
-          <Button title="Cancel" onPress={() => setPickerOpen(false)} />
+          <Button title={`Save ${count} card${count === 1 ? '' : 's'}`} color={c.earn} onPress={saveWallet} />
+          <Button title="Cancel" color={c.muted} onPress={() => setPickerOpen(false)} />
         </View>
       </Modal>
 
-      <StatusBar style="auto" />
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f6f7f9', padding: 20, paddingTop: 60 },
-  title: { fontSize: 26, fontWeight: '700' },
-  sub: { fontSize: 14, color: '#666', marginBottom: 12 },
-  status: { fontSize: 13, color: '#444', marginTop: 10 },
-  row: {
-    backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8,
-    borderLeftWidth: 3, borderLeftColor: '#2f6fed',
-  },
-  merchant: { fontSize: 15, fontWeight: '600' },
-  amt: { color: '#1e7d32' },
-  meta: { fontSize: 12, color: '#666', marginTop: 2 },
-  rec: { fontSize: 13, color: '#2f6fed', marginTop: 4, fontWeight: '600' },
-  best: { fontSize: 12, color: '#1e7d32', marginTop: 2 },
-  norec: { fontSize: 13, color: '#a05c00', marginTop: 4 },
-  meter: { marginTop: 6, backgroundColor: '#e8e8ee', borderRadius: 4, overflow: 'hidden' },
-  meterFill: { height: 6, backgroundColor: '#2f6fed' },
-  meterLabel: { fontSize: 11, color: '#666', marginTop: 2 },
-  pickerContainer: { flex: 1, backgroundColor: '#f6f7f9', padding: 20, paddingTop: 60 },
-  search: {
-    backgroundColor: '#fff', borderRadius: 8, padding: 10, marginBottom: 10,
-    borderWidth: 1, borderColor: '#ddd',
-  },
-  cardRow: {
-    backgroundColor: '#fff', borderRadius: 8, padding: 10, marginBottom: 6,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-  },
-  cardRowOn: { borderLeftWidth: 3, borderLeftColor: '#2f6fed' },
-  cardName: { fontSize: 14, fontWeight: '600', flex: 1 },
-  cardSub: { fontSize: 11, color: '#888', flex: 1 },
-  last4: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 6,
-    padding: 6, marginTop: 6, fontSize: 13,
-  },
-});
+const makeStyles = (c) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg, padding: 20, paddingTop: 60 },
+    header: { marginBottom: 14 },
+    logo: {
+      fontSize: 13, fontWeight: '800', letterSpacing: 2, color: c.text,
+    },
+    sub: { fontSize: 13, color: c.sub, marginTop: 4 },
+    potentialRow: {
+      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline',
+      marginTop: 12, backgroundColor: c.surface, borderRadius: 12, padding: 14,
+      borderWidth: 1, borderColor: c.hairline,
+    },
+    potentialLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, color: c.sub },
+    potentialValue: { fontSize: 22, fontWeight: '800', color: c.earn, fontVariant: ['tabular-nums'] },
+    actions: { flexDirection: 'row', marginBottom: 4 },
+    actionGap: { width: 10 },
+    status: { fontSize: 13, color: c.sub, marginTop: 8, marginBottom: 4 },
+    row: { paddingVertical: 12 },
+    rowTop: {
+      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline',
+    },
+    merchant: { fontSize: 15, fontWeight: '600', color: c.text, flex: 1, marginRight: 12 },
+    amt: {
+      fontSize: 17, fontWeight: '700', color: c.amount, fontVariant: ['tabular-nums'],
+    },
+    metaRow: {
+      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline',
+      marginTop: 3,
+    },
+    meta: { fontSize: 11, color: c.sub, marginTop: 2, letterSpacing: 0.3 },
+    verdict: { fontSize: 13, fontWeight: '600', marginTop: 2 },
+    hairline: { height: 1, backgroundColor: c.hairline },
+    meter: { marginTop: 8, backgroundColor: c.meterTrack, borderRadius: 3, overflow: 'hidden' },
+    meterFill: { height: 6 },
+    meterLabel: { fontSize: 11, color: c.sub, marginTop: 3 },
+    pickerContainer: { flex: 1, backgroundColor: c.bg, padding: 20, paddingTop: 60 },
+    search: {
+      backgroundColor: c.surface, borderRadius: 10, padding: 12, marginVertical: 12,
+      borderWidth: 1, borderColor: c.hairline, color: c.text, fontSize: 15,
+    },
+    cardRow: {
+      paddingVertical: 12, paddingHorizontal: 2,
+      borderLeftWidth: 3, borderLeftColor: 'transparent',
+    },
+    cardName: { fontSize: 14, fontWeight: '600', color: c.text },
+    cardSub: { fontSize: 11, color: c.sub, marginTop: 2 },
+    last4: {
+      backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline, borderRadius: 8,
+      padding: 8, marginTop: 8, fontSize: 13, color: c.text,
+    },
+  });
