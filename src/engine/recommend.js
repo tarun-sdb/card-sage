@@ -20,8 +20,10 @@ export function rewardFor(card, action, app) {
   const scoped = (r) => !!r.merchants;
   // A scoped row fires only when BOTH: it mentions the chosen app, OR the
   // action's merchant keywords, AND its category matches the action.
+  // UPI rows are tagged other categories (e.g. ONLINE_SHOPPING) — match by
+  // keyword only for the UPI action.
   const inScope = (r) =>
-    r.category === action.category &&
+    (action.category === "UPI" || r.category === action.category) &&
     (app && r.merchants.toLowerCase().includes(app.id.replace("-", " ")) ||
       (action.merchantKeywords || []).some((k) => r.merchants.toLowerCase().includes(k)));
   if (app) {
@@ -30,6 +32,8 @@ export function rewardFor(card, action, app) {
   }
   // Generic rows only: unscoped, matching the action's category.
   if (action.category) {
+    // UPI earns only from UPI-scoped rows; DEFAULT never applies to UPI.
+    if (action.category === "UPI") return null;
     const byCat = rows.filter((r) => !scoped(r) && r.category === action.category);
     if (byCat.length) return bestRow(byCat);
   }

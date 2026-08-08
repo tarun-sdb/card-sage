@@ -4,6 +4,17 @@
 
 export const ACTIONS = [
   {
+    id: "upi",
+    label: "UPI payments",
+    category: "UPI",
+    icon: "📲",
+    note: "Only RuPay cards with UPI-cashback reward rows apply; most cards earn 0 on UPI person payments.",
+    merchantKeywords: ["upi"],
+    apps: [
+      { id: "upi", label: "UPI app", feePct: 0, url: null },
+    ],
+  },
+  {
     id: "mobile-recharge",
     label: "Mobile recharge",
     category: "UTILITY_BILLS",
