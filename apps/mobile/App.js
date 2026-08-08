@@ -108,7 +108,8 @@ export default function App() {
       const scope = matchedFor(t) ? [matchedFor(t)] : wallet;
       for (const c of scope) {
         const r = rewardFor(c, action, app);
-        if (r && r.monthlyCapRs != null) {
+        // Minimum-transaction rows: spends below the threshold earn nothing.
+        if (r && r.monthlyCapRs != null && (r.minTxnRs == null || t.amount >= r.minTxnRs)) {
           const key = `${c.cardKey}:${r.category}`;
           m[key] = (m[key] || 0) + t.amount;
         }
@@ -124,10 +125,14 @@ export default function App() {
       const app = action.apps[0];
       const matched = matchedFor(t);
       const scope = matched ? [matched] : wallet;
-      const picks = recommend(scope, action, app, spent);
+      // Cards with min-txn thresholds below this amount earn nothing here.
+      const earning = (p) => !(p.reward.minTxnRs && t.amount < p.reward.minTxnRs);
+      const rawPicks = recommend(scope, action, app, spent);
+      const picks = rawPicks.filter(earning);
+      const excluded = rawPicks.find((p) => !earning(p));
       // When the used card is known, also show the best alternative.
-      const best = matched ? recommend(wallet, action, app, spent)[0] : null;
-      return { t, cat, upi: !cat, matched, top: picks[0], best };
+      const best = matched ? recommend(wallet, action, app, spent).filter(earning)[0] : null;
+      return { t, cat, upi: !cat, matched, top: picks[0], best, excluded };
     });
   }, [txns, wallet, spent]);
 
@@ -182,6 +187,11 @@ export default function App() {
                   </View>
                 ) : null}
               </View>
+            ) : item.excluded ? (
+              <Text style={styles.norec}>
+                ₹{item.t.amount} txn — {item.excluded.card.name} needs min ₹
+                {item.excluded.reward.minTxnRs} cashback txn
+              </Text>
             ) : (
               <Text style={styles.norec}>
                 {item.upi ? 'no UPI cashback card' : 'no reward row'}
