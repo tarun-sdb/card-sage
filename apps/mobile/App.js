@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, Easing, FlatList, Modal, PermissionsAndroid, Platform,
+  Animated, Easing, FlatList, Linking, Modal, PermissionsAndroid, Platform,
   Pressable, Share, StyleSheet, Text, TextInput, useColorScheme, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,6 +13,7 @@ import { parseSms } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
 import { loadTxns, registerNightlyScan } from './modules/nightly-scan';
+import ShareReceiver from './modules/share-receiver';
 
 // Unmapped merchants (UPI person payments etc.) route through the UPI action.
 const UPI_ACTION = ACTIONS.find((a) => a.id === 'upi');
@@ -206,6 +207,7 @@ export default function App() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState({});
+  const [shared, setShared] = useState(null); // { text, action, picks } from share-sheet intake
 
   const scheme = useColorScheme();
   const c = palettes[scheme === 'dark' ? 'dark' : 'light'];
@@ -258,6 +260,7 @@ export default function App() {
       JSON.stringify(cards.map((c) => ({ cardKey: c.cardKey, last4: c.last4 })))
     );
     setPickerOpen(false);
+    setTab('portals'); // first-run landing: recommendations, not the empty ledger
   };
 
   // SMS gives only bank + last4. Match against the registered wallet.
@@ -311,6 +314,32 @@ export default function App() {
     if (wallet.length && !autoScanned.current) {
       autoScanned.current = true;
       readSms();
+    }
+  }, [wallet.length]);
+
+  // Share-sheet intake: the app was opened via Android's share sheet with a
+  // link/text (e.g. an Amazon product page). Detect the merchant, recommend
+  // the best card, show it as a modal. Runs after the wallet settles.
+  const shareChecked = useRef(false);
+  useEffect(() => {
+    if (wallet.length && !shareChecked.current) {
+      shareChecked.current = true;
+      ShareReceiver.getSharedContent()
+        .then((content) => {
+          if (!content) return;
+          // Clean URL-ish text into a merchant name for merchantCategory.
+          const text = content.text.replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/?#\s]/)[0];
+          const cat = merchantCategory(text) || merchantCategory(content.subject);
+          if (!cat) {
+            setShared({ text: content.text, action: null, picks: [] });
+            return;
+          }
+          const action = actionFor(cat);
+          const app = action && action.apps[0];
+          const picks = action ? recommend(wallet, action, app, {}) : [];
+          setShared({ text: content.text, action, picks });
+        })
+        .catch(() => {});
     }
   }, [wallet.length]);
 
@@ -406,7 +435,7 @@ export default function App() {
           c={c} styles={styles} wallet={wallet} cardUsage={cardUsage} openPicker={openPicker}
         />
       ) : tab === 'portals' ? (
-        <PortalsPage c={c} styles={styles} />
+        <PortalsPage c={c} styles={styles} wallet={wallet} spent={spent} />
       ) : (
         <View style={{ flex: 1 }}>
       <View style={styles.header}>
@@ -610,6 +639,50 @@ export default function App() {
         </View>
       </Modal>
 
+      {shared ? (
+        <Modal visible animationType="slide" onRequestClose={() => setShared(null)}>
+          <View style={styles.pickerContainer}>
+            <View style={styles.logoRow}>
+              <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+                <Text style={styles.markText}>₹</Text>
+              </LinearGradient>
+              <Text style={styles.logo}>BEST CARD FOR THIS</Text>
+            </View>
+            <Text style={styles.cardSub} numberOfLines={3}>
+              {shared.text}
+            </Text>
+            {shared.action && shared.picks.length ? (
+              <View style={{ marginTop: 16, gap: 10 }}>
+                {shared.picks.slice(0, 3).map((p, i) => (
+                  <View key={p.card.cardKey} style={styles.sharePick}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.cardName}>{shortName(p.card.name)}</Text>
+                      <Text style={styles.cardSub}>
+                        {humanize(shared.action.category)} · ₹{p.reward.ratePct}% rate
+                      </Text>
+                    </View>
+                    <Chip color={i === 0 ? c.earn : c.sub}>
+                      {p.reward.netPct}% net
+                    </Chip>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={{ marginTop: 16 }}>
+                <Text style={styles.status}>
+                  {shared.action
+                    ? 'No wallet card earns here — add one in Cards.'
+                    : 'Could not match a merchant — shared text is not a known store.'}
+                </Text>
+              </View>
+            )}
+            <View style={{ gap: 10, marginTop: 20 }}>
+              <Btn title="Close" color={c.earn} primary onPress={() => setShared(null)} />
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
     </View>
   );
@@ -657,7 +730,8 @@ const shareVerdict = async (item) => {
   }
 };
 
-function PortalsPage({ c, styles }) {
+function PortalsPage({ c, styles, wallet, spent }) {
+  const [sel, setSel] = useState(null); // tapped action → recommendation modal
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.header}>
@@ -668,7 +742,7 @@ function PortalsPage({ c, styles }) {
           <Text style={styles.logo}>PAY PORTALS</Text>
         </View>
         <Text style={styles.sub}>
-          Fee charged by the app when you pay with a card. 0% = no card fee.
+          Tap an action — best card + where to pay. Fee charged by the app: 0% = no card fee.
         </Text>
       </View>
       <FlatList
@@ -677,11 +751,12 @@ function PortalsPage({ c, styles }) {
         contentContainerStyle={{ paddingBottom: 16 }}
         ItemSeparatorComponent={() => <View style={styles.hairline} />}
         renderItem={({ item }) => (
-          <View style={styles.portalRow}>
+          <Pressable style={styles.portalRow} onPress={() => setSel(item)}>
             <View style={styles.rowTop}>
               <Text style={styles.merchant} numberOfLines={1}>
                 {item.icon} {item.label}
               </Text>
+              <Text style={[styles.meta, { flex: 0 }]}>tap →</Text>
             </View>
             {item.note ? <Text style={styles.cardSub}>{item.note}</Text> : null}
             <View style={{ gap: 6, marginTop: 6 }}>
@@ -696,10 +771,77 @@ function PortalsPage({ c, styles }) {
                 </View>
               ))}
             </View>
-          </View>
+          </Pressable>
         )}
       />
+
+      {sel ? (
+        <PortalModal
+          c={c} styles={styles} action={sel} wallet={wallet} spent={spent}
+          onClose={() => setSel(null)}
+        />
+      ) : null}
     </View>
+  );
+}
+
+// Tap on a portal action → best card for the category + apps that open the
+// actual payment destination. Opens the app/browser via Linking.
+function PortalModal({ c, styles, action, wallet, spent, onClose }) {
+  const app = action.apps[0];
+  const picks = recommend(wallet, action, app, spent);
+  const best = picks.filter((p) => !(p.reward.minTxnRs && 500 < p.reward.minTxnRs))[0] || picks[0];
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <View style={styles.pickerContainer}>
+        <View style={styles.logoRow}>
+          <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+            <Text style={styles.markText}>₹</Text>
+          </LinearGradient>
+          <Text style={styles.logo}>{action.icon} {action.label.toUpperCase()}</Text>
+        </View>
+
+        <View style={{ marginTop: 14 }}>
+          <Text style={styles.potentialLabel}>BEST CARD</Text>
+          {best ? (
+            <View style={[styles.portalApp, { marginTop: 6 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardName}>{shortName(best.card.name)}</Text>
+                <Text style={styles.cardSub}>
+                  {best.reward.netPct}% net cashback
+                  {best.reward.monthlyCapRs != null ? ` · cap ₹${best.reward.monthlyCapRs.toLocaleString('en-IN')}` : ''}
+                </Text>
+              </View>
+              <Chip color={c.earn}>{best.reward.netPct}%</Chip>
+            </View>
+          ) : (
+            <Text style={styles.status}>No wallet card earns here — add one in Cards.</Text>
+          )}
+        </View>
+
+        <Text style={[styles.potentialLabel, { marginTop: 18 }]}>WHERE TO PAY</Text>
+        <View style={{ gap: 8, marginTop: 8 }}>
+          {action.apps.map((app) => (
+            <Pressable
+              key={app.id}
+              style={[styles.portalApp, { backgroundColor: c.surface }]}
+              onPress={() => app.url && Linking.openURL(app.url)}
+            >
+              <Text style={[styles.cardSub, { flex: 1, color: c.text }]} numberOfLines={1}>
+                {app.label}
+              </Text>
+              <Chip color={app.feePct > 0 ? c.warn : c.earn}>
+                {app.feePct > 0 ? `${app.feePct}% fee` : '0% fee'}
+              </Chip>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={{ gap: 10, marginTop: 20 }}>
+          <Btn title="Close" color={c.earn} primary onPress={onClose} />
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -896,6 +1038,11 @@ const makeStyles = (c) =>
       flexDirection: 'row', alignItems: 'center', gap: 8,
       backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline,
       borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+    },
+    sharePick: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline,
+      borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
     },
     cardFace: {
       height: 168, borderRadius: 18, padding: 18, justifyContent: 'space-between',
