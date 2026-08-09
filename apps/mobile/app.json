@@ -9,6 +9,7 @@
         "projectId": "6ca15afc-f2a9-44fc-aa7b-744b1912a118"
       }
     },
+    "plugins": ["expo-background-fetch"],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

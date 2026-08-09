@@ -2,7 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated, Easing, FlatList, Modal, PermissionsAndroid, Platform,
-  Pressable, StyleSheet, Text, TextInput, useColorScheme, View,
+  Pressable, Share, StyleSheet, Text, TextInput, useColorScheme, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,6 +12,7 @@ import { recommend, rewardFor } from '../../src/engine/recommend';
 import { parseSms } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
+import { loadTxns, registerNightlyScan } from './modules/nightly-scan';
 
 // Unmapped merchants (UPI person payments etc.) route through the UPI action.
 const UPI_ACTION = ACTIONS.find((a) => a.id === 'upi');
@@ -129,13 +130,16 @@ function CapMeter({ used, cap, c, label }) {
 }
 
 // Verdict pill — tinted bg + colored text. Color carries meaning.
-function Chip({ color, children }) {
+function Chip({ color, children, onPress }) {
   const { styles } = useStyles();
-  return (
+  const inner = (
     <View style={[styles.chip, { backgroundColor: color + '1A', borderColor: color + '40' }]}>
       <Text style={[styles.chipText, { color }]} numberOfLines={1}>{children}</Text>
     </View>
   );
+  return onPress ? (
+    <Pressable onPress={onPress} hitSlop={6}>{inner}</Pressable>
+  ) : inner;
 }
 
 function Btn({ title, color, onPress, primary, small }) {
@@ -208,6 +212,17 @@ export default function App() {
   const styles = useMemo(() => makeStyles(c), [c]);
 
   useEffect(() => {
+    registerNightlyScan();
+    // Nightly scans persist txns; load whatever the background task collected.
+    loadTxns().then((saved) => {
+      if (saved.length) {
+        setTxns(saved);
+        setStatus(`${saved.length} transactions auto-scanned.`);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     AsyncStorage.getItem(WALLET_KEY).then((raw) => {
       if (raw) {
         const saved = JSON.parse(raw);
@@ -275,6 +290,13 @@ export default function App() {
         .filter((t) => t.amount != null);
       setBatch((b) => b + 1); // remount rows → re-stagger
       setTxns(parsed);
+      // Persist so the nightly task can append on top of these, and the
+      // marker skips already-seen SMS next scan.
+      AsyncStorage.setItem('card-sage:txns', JSON.stringify(parsed));
+      const latest = messages.length
+        ? Math.max(...messages.map((m) => new Date(m.date).getTime()))
+        : 0;
+      AsyncStorage.setItem('card-sage:sms-marker', String(latest));
       setStatus(`Parsed ${parsed.length} card transactions from ${messages.length} messages.`);
     } catch (e) {
       setStatus('Error: ' + e.message);
@@ -372,6 +394,8 @@ export default function App() {
         <CardsPage
           c={c} styles={styles} wallet={wallet} cardUsage={cardUsage} openPicker={openPicker}
         />
+      ) : tab === 'portals' ? (
+        <PortalsPage c={c} styles={styles} />
       ) : (
         <View style={{ flex: 1 }}>
       <View style={styles.header}>
@@ -419,7 +443,7 @@ export default function App() {
                       {item.cat || 'UPI'}
                       {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                     </Text>
-                    <Chip color={c.earn}>
+                    <Chip color={c.earn} onPress={() => shareVerdict(item)}>
                       ✓ {shortName(item.top.card.name)} — {item.top.reward.netPct}%
                     </Chip>
                   </View>
@@ -436,7 +460,7 @@ export default function App() {
                     {item.cat || 'UPI'}
                     {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                   </Text>
-                  <Chip color={c.warn}>
+                  <Chip color={c.warn} onPress={() => shareVerdict(item)}>
                     {shortName(item.excluded.card.name)} — needs ₹{item.excluded.reward.minTxnRs} min
                   </Chip>
                 </View>
@@ -447,7 +471,7 @@ export default function App() {
               return (
                 <View style={styles.metaRow}>
                   <Text style={styles.meta}>UPI</Text>
-                  <Chip color={c.earn}>
+                  <Chip color={c.earn} onPress={() => shareVerdict(item)}>
                     add {shortName(item.suggested.card.name)} — {item.suggested.reward.netPct}%
                   </Chip>
                 </View>
@@ -595,6 +619,79 @@ const humanize = (s) =>
 const cardType = (name) => (/debit/i.test(name) ? 'DEBIT' : 'CREDIT');
 const shortName = (n) => n.replace(/ (Credit|Debit|Charge) Card$/, '');
 
+// Share a single recommendation verdict via the system share sheet.
+const shareVerdict = async (item) => {
+  const lines = [];
+  if (item.t) {
+    lines.push(`${item.t.merchant || '(upi)'} — ₹${item.t.amount.toLocaleString('en-IN')}`);
+  }
+  if (item.top) {
+    lines.push(
+      `Best card: ${item.top.card.name} — ${item.top.reward.netPct}% net cashback`
+    );
+  }
+  if (item.excluded) {
+    lines.push(
+      `${item.excluded.card.name} needs ₹${item.excluded.reward.minTxnRs} min txn`
+    );
+  }
+  if (item.suggested) {
+    lines.push(`Add ${item.suggested.card.name} — ${item.suggested.reward.netPct}% cashback`);
+  }
+  if (item.upi && !item.top) lines.push('Not a card spend — UPI person pay');
+  try {
+    await Share.share({ message: lines.join('\n') });
+  } catch (e) {
+    /* user dismissed — nothing to do */
+  }
+};
+
+function PortalsPage({ c, styles }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.header}>
+        <View style={styles.logoRow}>
+          <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+            <Text style={styles.markText}>₹</Text>
+          </LinearGradient>
+          <Text style={styles.logo}>PAY PORTALS</Text>
+        </View>
+        <Text style={styles.sub}>
+          Fee charged by the app when you pay with a card. 0% = no card fee.
+        </Text>
+      </View>
+      <FlatList
+        data={ACTIONS.filter((a) => a.id !== 'upi')}
+        keyExtractor={(a) => a.id}
+        contentContainerStyle={{ paddingBottom: 16 }}
+        ItemSeparatorComponent={() => <View style={styles.hairline} />}
+        renderItem={({ item }) => (
+          <View style={styles.portalRow}>
+            <View style={styles.rowTop}>
+              <Text style={styles.merchant} numberOfLines={1}>
+                {item.icon} {item.label}
+              </Text>
+            </View>
+            {item.note ? <Text style={styles.cardSub}>{item.note}</Text> : null}
+            <View style={{ gap: 6, marginTop: 6 }}>
+              {item.apps.map((app) => (
+                <View key={app.id} style={styles.portalApp}>
+                  <Text style={[styles.cardSub, { flex: 1, color: c.text }]} numberOfLines={1}>
+                    {app.label}
+                  </Text>
+                  <Chip color={app.feePct > 0 ? c.warn : c.earn}>
+                    {app.feePct > 0 ? `${app.feePct}% fee` : '0% fee'}
+                  </Chip>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+
 function CardsPage({ c, styles, wallet, cardUsage, openPicker }) {
   if (!wallet.length) {
     return (
@@ -684,6 +781,7 @@ function CardsPage({ c, styles, wallet, cardUsage, openPicker }) {
 function Dock({ tab, setTab, c, styles }) {
   const tabs = [
     { id: 'spends', label: 'Spends' },
+    { id: 'portals', label: 'Portals' },
     { id: 'cards', label: 'Cards' },
   ];
   return (
@@ -782,6 +880,12 @@ const makeStyles = (c) =>
     dockLabel: { fontSize: 12, letterSpacing: 0.5 },
     dockDot: { width: 4, height: 4, borderRadius: 2 },
     cardPageRow: { paddingVertical: 16 },
+    portalRow: { paddingVertical: 14 },
+    portalApp: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline,
+      borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+    },
     cardFace: {
       height: 168, borderRadius: 18, padding: 18, justifyContent: 'space-between',
       elevation: 4, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14,
