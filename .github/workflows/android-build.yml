@@ -34,13 +34,28 @@ jobs:
         working-directory: apps/mobile
         run: npm ci
 
+      - name: Cache gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            apps/mobile/android/.gradle
+          key: gradle-${{ hashFiles('apps/mobile/android/**') }}
+          restore-keys: gradle-
+
+      - name: Cache metro
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/mobile/node_modules/.cache
+            /tmp/metro-*
+          key: metro-${{ github.sha }}
+          restore-keys: metro-
+
       - name: Generate native project
         working-directory: apps/mobile
         run: npx expo prebuild --platform android --no-install
-
-      - name: Bump gradle heap for CI
-        working-directory: apps/mobile/android
-        run: sed -i 's/-Xmx2048m/-Xmx3584m/' gradle.properties
 
       - name: Build APK
         working-directory: apps/mobile/android
