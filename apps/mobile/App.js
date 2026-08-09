@@ -1,9 +1,10 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, FlatList, LayoutAnimation, Modal, PermissionsAndroid, Platform,
-  StyleSheet, Text, TextInput, UIManager, useColorScheme, View,
+  Animated, Easing, FlatList, Modal, PermissionsAndroid, Platform,
+  Pressable, StyleSheet, Text, TextInput, useColorScheme, View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import cardsData from '../../src/data/cards.json';
 import { ACTIONS } from '../../src/engine/actions';
@@ -15,10 +16,6 @@ import SmsReader from './modules/sms-reader';
 // Unmapped merchants (UPI person payments etc.) route through the UPI action.
 const UPI_ACTION = ACTIONS.find((a) => a.id === 'upi');
 const WALLET_KEY = 'card-sage:wallet';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 // "The Ledger" — color encodes meaning only. earn = winning, warn = min not
 // met / near cap, danger = over cap, muted = unknowable (UPI person pays).
@@ -37,8 +34,156 @@ const palettes = {
   },
 };
 
+// --- Craft components -----------------------------------------------------
+
+// Wallet fan: two rotated cards peeking behind the front card. Front holds
+// the real content (potential summary / empty state).
+function Fan({ c, front }) {
+  const rise = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(rise, {
+      toValue: 1, duration: 500, delay: 100, easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, []);
+  const anim = {
+    opacity: rise,
+    translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }),
+  };
+  return (
+    <View style={styles.fan}>
+      <Animated.View
+        style={{
+          opacity: anim.opacity,
+          transform: [{ translateY: anim.translateY }, { rotate: '-5deg' }, { translateX: -10 }],
+          ...styles.fanCard,
+        }}
+      />
+      <Animated.View
+        style={{
+          opacity: anim.opacity,
+          transform: [{ translateY: anim.translateY }, { rotate: '6deg' }, { translateX: 10 }],
+          ...styles.fanCard,
+        }}
+      />
+      <LinearGradient
+        colors={[c.surface, c.earn + '14']}
+        style={[styles.fanCard, styles.fanFront]}
+      >
+        {front}
+      </LinearGradient>
+    </View>
+  );
+}
+
+function CountUp({ value, style }) {
+  const [disp, setDisp] = useState('0');
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const l = anim.addListener(({ value: v }) => setDisp(String(Math.round(v))));
+    Animated.timing(anim, {
+      toValue: value, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: false,
+    }).start();
+    return () => anim.removeListener(l);
+  }, [value]);
+  return <Text style={style}>₹{Number(disp).toLocaleString('en-IN')}</Text>;
+}
+
+function CapMeter({ used, cap, c }) {
+  const a = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(a, { toValue: 1, duration: 400, delay: 200, useNativeDriver: true }).start();
+  }, []);
+  const pct = used / cap;
+  const color = pct >= 1 ? c.danger : pct >= 0.7 ? c.warn : c.earn;
+  const segs = 12;
+  const filled = Math.min(segs, Math.max(0, Math.round(pct * segs)));
+  return (
+    <View style={styles.meterWrap}>
+      <Animated.View style={[styles.meterSegs, { opacity: a }]}>
+        {Array.from({ length: segs }, (_, i) => (
+          <View
+            key={i}
+            style={{
+              flex: 1, height: 6, borderRadius: 2,
+              backgroundColor: i < filled ? color : c.meterTrack,
+            }}
+          />
+        ))}
+      </Animated.View>
+      <Text style={styles.meterLabel}>
+        ₹{used.toLocaleString('en-IN')}/{cap.toLocaleString('en-IN')} used
+      </Text>
+    </View>
+  );
+}
+
+// Verdict pill — tinted bg + colored text. Color carries meaning.
+function Chip({ color, children }) {
+  return (
+    <View style={[styles.chip, { backgroundColor: color + '1A', borderColor: color + '40' }]}>
+      <Text style={[styles.chipText, { color }]} numberOfLines={1}>{children}</Text>
+    </View>
+  );
+}
+
+function Btn({ title, color, onPress, primary, small }) {
+  const s = useRef(new Animated.Value(1)).current;
+  return (
+    <Animated.View style={{ transform: [{ scale: s }] }}>
+      <Pressable
+        onPressIn={() => Animated.spring(s, { toValue: 0.96, useNativeDriver: true }).start()}
+        onPressOut={() => Animated.spring(s, { toValue: 1, useNativeDriver: true }).start()}
+        onPress={onPress}
+      >
+        <View
+          style={[
+            styles.btn, small && styles.btnSmall,
+            primary
+              ? { backgroundColor: color }
+              : { borderWidth: 1, borderColor: color, backgroundColor: 'transparent' },
+          ]}
+        >
+          <Text
+            style={[
+              styles.btnText, small && styles.btnTextSmall,
+              { color: primary ? '#FFFFFF' : color },
+            ]}
+          >
+            {title}
+          </Text>
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+// Row entrance: fade + rise, staggered by index.
+function Row({ index, children }) {
+  const a = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(a, {
+      toValue: 1, duration: 300, delay: index * 25, easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, []);
+  return (
+    <Animated.View
+      style={{
+        opacity: a,
+        transform: [{ translateY: a.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+// --- App -------------------------------------------------------------------
+
 export default function App() {
   const [txns, setTxns] = useState([]);
+  const [batch, setBatch] = useState(0);
   const [status, setStatus] = useState('idle');
   const [wallet, setWallet] = useState([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -115,7 +260,7 @@ export default function App() {
       const parsed = messages
         .map((m) => ({ ...parseSms(m.sender, m.body), date: m.date }))
         .filter((t) => t.amount != null);
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setBatch((b) => b + 1); // remount rows → re-stagger
       setTxns(parsed);
       setStatus(`Parsed ${parsed.length} card transactions from ${messages.length} messages.`);
     } catch (e) {
@@ -189,40 +334,44 @@ export default function App() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.logo}>CARD SAGE</Text>
+        <View style={styles.logoRow}>
+          <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+            <Text style={styles.markText}>₹</Text>
+          </LinearGradient>
+          <Text style={styles.logo}>CARD SAGE</Text>
+        </View>
         <Text style={styles.sub}>
           {wallet.length ? wallet.length + ' cards' : 'no cards'} · {summary.n} txns ·{' '}
           ₹{summary.scanned.toLocaleString('en-IN')} scanned
         </Text>
         {summary.n > 0 ? (
-          <View style={styles.potentialRow}>
-            <Text style={styles.potentialLabel}>POTENTIAL CASHBACK</Text>
-            <Text style={styles.potentialValue}>
-              ₹{Math.round(summary.potential).toLocaleString('en-IN')}
-            </Text>
-          </View>
+          <Fan
+            c={c}
+            front={
+              <View style={styles.potentialBody}>
+                <Text style={styles.potentialLabel}>POTENTIAL CASHBACK</Text>
+                <CountUp value={Math.round(summary.potential)} style={styles.potentialValue} />
+              </View>
+            }
+          />
         ) : null}
       </View>
 
       <View style={styles.actions}>
-        <Button title="Read recent SMS" color={c.earn} onPress={readSms} />
+        <Btn title="Read recent SMS" color={c.earn} primary onPress={readSms} />
         <View style={styles.actionGap} />
-        <Button title="Change cards" color={c.muted} onPress={openPicker} />
+        <Btn title="Change cards" color={c.muted} onPress={openPicker} />
       </View>
       {status ? <Text style={styles.status}>{status}</Text> : null}
 
       <FlatList
         data={rows}
-        keyExtractor={(_, i) => String(i)}
+        keyExtractor={(_, i) => `${batch}:${i}`}
         style={{ width: '100%', marginTop: 8 }}
         ItemSeparatorComponent={() => <View style={styles.hairline} />}
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           const verdict = (() => {
             if (item.top) {
-              const usedPct = item.top.cap != null ? item.top.used / item.top.cap : 0;
-              const vColor = item.top.cap != null
-                ? (usedPct >= 1 ? c.danger : usedPct >= 0.7 ? c.warn : c.earn)
-                : c.earn;
               return (
                 <View>
                   <View style={styles.metaRow}>
@@ -230,22 +379,12 @@ export default function App() {
                       {item.cat || 'UPI'}
                       {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                     </Text>
-                    <Text style={[styles.verdict, { color: vColor }]}>
+                    <Chip color={c.earn}>
                       ✓ {shortName(item.top.card.name)} — {item.top.reward.netPct}%
-                    </Text>
+                    </Chip>
                   </View>
                   {item.top.cap != null ? (
-                    <View style={styles.meter}>
-                      <View
-                        style={[styles.meterFill, {
-                          width: `${Math.min(100, usedPct * 100)}%`,
-                          backgroundColor: vColor,
-                        }]}
-                      />
-                      <Text style={styles.meterLabel}>
-                        ₹{item.top.used}/{item.top.cap} used
-                      </Text>
-                    </View>
+                    <CapMeter used={item.top.used} cap={item.top.cap} c={c} />
                   ) : null}
                 </View>
               );
@@ -257,9 +396,9 @@ export default function App() {
                     {item.cat || 'UPI'}
                     {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                   </Text>
-                  <Text style={[styles.verdict, { color: c.warn }]}>
+                  <Chip color={c.warn}>
                     {shortName(item.excluded.card.name)} — needs ₹{item.excluded.reward.minTxnRs} min
-                  </Text>
+                  </Chip>
                 </View>
               );
             }
@@ -270,36 +409,53 @@ export default function App() {
                   {item.cat || 'UPI'}
                   {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                 </Text>
-                <Text style={[styles.verdict, { color: c.muted }]}>
+                <Chip color={c.muted}>
                   {item.upi ? 'not a card spend' : 'no reward row'}
-                </Text>
+                </Chip>
               </View>
             );
           })();
           return (
-            <View style={styles.row}>
-              <View style={styles.rowTop}>
-                <Text style={styles.merchant} numberOfLines={1}>
-                  {item.t.merchant || '(upi)'}
-                </Text>
-                <Text style={styles.amt}>₹{item.t.amount.toLocaleString('en-IN')}</Text>
+            <Row index={index}>
+              <View style={styles.row}>
+                <View style={styles.rowTop}>
+                  <Text style={styles.merchant} numberOfLines={1}>
+                    {item.t.merchant || '(upi)'}
+                  </Text>
+                  <Text style={styles.amt}>₹{item.t.amount.toLocaleString('en-IN')}</Text>
+                </View>
+                {verdict}
               </View>
-              {verdict}
-            </View>
+            </Row>
           );
         }}
         ListEmptyComponent={
-          <Text style={styles.status}>
-            {wallet.length
-              ? 'No transactions yet — read SMS to scan your bank alerts.'
-              : 'Add your cards first — they power every recommendation.'}
-          </Text>
+          <View style={styles.empty}>
+            <Fan
+              c={c}
+              front={
+                <View style={styles.potentialBody}>
+                  <Text style={styles.potentialLabel}>YOUR WALLET</Text>
+                  <Text style={styles.emptyText}>
+                    {wallet.length
+                      ? 'No transactions yet — read SMS to scan your bank alerts.'
+                      : 'Add your cards first — they power every recommendation.'}
+                  </Text>
+                </View>
+              }
+            />
+          </View>
         }
       />
 
       <Modal visible={pickerOpen} animationType="slide">
         <View style={styles.pickerContainer}>
-          <Text style={styles.logo}>YOUR CARDS</Text>
+          <View style={styles.logoRow}>
+            <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+              <Text style={styles.markText}>₹</Text>
+            </LinearGradient>
+            <Text style={styles.logo}>YOUR CARDS</Text>
+          </View>
           <Text style={styles.sub}>Pick every card you own. Recommendations use only these.</Text>
           <TextInput
             style={styles.search}
@@ -340,9 +496,10 @@ export default function App() {
                       />
                     ) : null}
                   </View>
-                  <Button
+                  <Btn
                     title={on ? 'Remove' : 'Add'}
                     color={on ? c.danger : c.earn}
+                    small
                     onPress={() =>
                       setSelected((s) => {
                         const n = { ...s };
@@ -356,8 +513,9 @@ export default function App() {
               );
             }}
           />
-          <Button title={`Save ${count} card${count === 1 ? '' : 's'}`} color={c.earn} onPress={saveWallet} />
-          <Button title="Cancel" color={c.muted} onPress={() => setPickerOpen(false)} />
+          <Btn title={`Save ${count} card${count === 1 ? '' : 's'}`} color={c.earn} primary onPress={saveWallet} />
+          <View style={styles.actionGap} />
+          <Btn title="Cancel" color={c.muted} onPress={() => setPickerOpen(false)} />
         </View>
       </Modal>
 
@@ -370,19 +528,34 @@ const makeStyles = (c) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bg, padding: 20, paddingTop: 60 },
     header: { marginBottom: 14 },
-    logo: {
-      fontSize: 13, fontWeight: '800', letterSpacing: 2, color: c.text,
+    logoRow: { flexDirection: 'row', alignItems: 'center' },
+    mark: {
+      width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+      marginRight: 8,
     },
-    sub: { fontSize: 13, color: c.sub, marginTop: 4 },
-    potentialRow: {
-      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline',
-      marginTop: 12, backgroundColor: c.surface, borderRadius: 12, padding: 14,
-      borderWidth: 1, borderColor: c.hairline,
+    markText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+    logo: { fontSize: 13, fontWeight: '800', letterSpacing: 2, color: c.text },
+    sub: { fontSize: 13, color: c.sub, marginTop: 6 },
+    fan: { marginTop: 14, height: 92 },
+    fanCard: {
+      position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+      borderRadius: 14, borderWidth: 1, borderColor: c.hairline, backgroundColor: c.surface,
     },
+    fanFront: { padding: 14, elevation: 3, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+    potentialBody: { justifyContent: 'center', height: '100%' },
     potentialLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, color: c.sub },
-    potentialValue: { fontSize: 22, fontWeight: '800', color: c.earn, fontVariant: ['tabular-nums'] },
-    actions: { flexDirection: 'row', marginBottom: 4 },
-    actionGap: { width: 10 },
+    potentialValue: { fontSize: 26, fontWeight: '800', color: c.earn, fontVariant: ['tabular-nums'], marginTop: 2 },
+    empty: { marginTop: 24 },
+    emptyText: { fontSize: 13, color: c.sub, marginTop: 6, lineHeight: 19 },
+    actions: { flexDirection: 'row', marginBottom: 4, marginTop: 2 },
+    actionGap: { width: 10, height: 10 },
+    btn: {
+      borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    btnSmall: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+    btnText: { fontSize: 14, fontWeight: '700' },
+    btnTextSmall: { fontSize: 12, fontWeight: '600' },
     status: { fontSize: 13, color: c.sub, marginTop: 8, marginBottom: 4 },
     row: { paddingVertical: 12 },
     rowTop: {
@@ -393,22 +566,27 @@ const makeStyles = (c) =>
       fontSize: 17, fontWeight: '700', color: c.amount, fontVariant: ['tabular-nums'],
     },
     metaRow: {
-      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline',
-      marginTop: 3,
+      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+      marginTop: 6,
     },
-    meta: { fontSize: 11, color: c.sub, marginTop: 2, letterSpacing: 0.3 },
-    verdict: { fontSize: 13, fontWeight: '600', marginTop: 2 },
+    meta: { fontSize: 11, color: c.sub, letterSpacing: 0.3, marginRight: 8 },
+    chip: {
+      borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1,
+      maxWidth: '62%',
+    },
+    chipText: { fontSize: 12, fontWeight: '600' },
     hairline: { height: 1, backgroundColor: c.hairline },
-    meter: { marginTop: 8, backgroundColor: c.meterTrack, borderRadius: 3, overflow: 'hidden' },
-    meterFill: { height: 6 },
-    meterLabel: { fontSize: 11, color: c.sub, marginTop: 3 },
+    meterWrap: { marginTop: 8 },
+    meterSegs: { flexDirection: 'row', justifyContent: 'space-between', gap: 3 },
+    meterLabel: { fontSize: 11, color: c.sub, marginTop: 4 },
     pickerContainer: { flex: 1, backgroundColor: c.bg, padding: 20, paddingTop: 60 },
     search: {
       backgroundColor: c.surface, borderRadius: 10, padding: 12, marginVertical: 12,
       borderWidth: 1, borderColor: c.hairline, color: c.text, fontSize: 15,
     },
     cardRow: {
-      paddingVertical: 12, paddingHorizontal: 2,
+      paddingVertical: 12, paddingHorizontal: 2, flexDirection: 'row',
+      alignItems: 'center', justifyContent: 'space-between',
       borderLeftWidth: 3, borderLeftColor: 'transparent',
     },
     cardName: { fontSize: 14, fontWeight: '600', color: c.text },
