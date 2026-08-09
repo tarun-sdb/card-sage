@@ -89,7 +89,7 @@ function CountUp({ value, style }) {
   return <Text style={style}>₹{Number(disp).toLocaleString('en-IN')}</Text>;
 }
 
-function CapMeter({ used, cap, c }) {
+function CapMeter({ used, cap, c, label }) {
   const a = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(a, { toValue: 1, duration: 400, delay: 200, useNativeDriver: true }).start();
@@ -112,7 +112,7 @@ function CapMeter({ used, cap, c }) {
         ))}
       </Animated.View>
       <Text style={styles.meterLabel}>
-        ₹{used.toLocaleString('en-IN')}/{cap.toLocaleString('en-IN')} used
+        {label ?? `₹${used.toLocaleString('en-IN')}/${cap.toLocaleString('en-IN')} used`}
       </Text>
     </View>
   );
@@ -184,6 +184,7 @@ function Row({ index, children }) {
 export default function App() {
   const [txns, setTxns] = useState([]);
   const [batch, setBatch] = useState(0);
+  const [tab, setTab] = useState('spends');
   const [status, setStatus] = useState('idle');
   const [wallet, setWallet] = useState([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -304,7 +305,12 @@ export default function App() {
       const excluded = rawPicks.find((p) => !earning(p));
       // When the used card is known, also show the best alternative.
       const best = matched ? recommend(wallet, action, app, spent).filter(earning)[0] : null;
-      return { t, cat, upi: !cat, matched, top: picks[0], best, excluded };
+      // UPI spend with no owned UPI card: suggest one from the catalog.
+      const suggested =
+        !cat && !picks.length
+          ? recommend(cardsData.cards, action, app, spent).filter(earning)[0]
+          : null;
+      return { t, cat, upi: !cat, matched, top: picks[0], best, excluded, suggested };
     });
   }, [txns, wallet, spent]);
 
@@ -329,10 +335,33 @@ export default function App() {
   }, [txns, wallet, spent]);
 
   const count = Object.keys(selected).filter((k) => selected[k]).length;
-  const shortName = (n) => n.replace(/ (Credit|Debit|Charge) Card$/, '');
+
+  // Per-card cap usage: the most-consumed capped reward row per card.
+  const cardUsage = useMemo(() => {
+    const m = {};
+    for (const card of wallet) {
+      let best = null;
+      for (const t of txns) {
+        const action = actionFor(merchantCategory(t.merchant));
+        const r = action && rewardFor(card, action, action.apps[0]);
+        if (!r || r.monthlyCapRs == null) continue;
+        if (r.minTxnRs && t.amount < r.minTxnRs) continue;
+        const used = spent[`${card.cardKey}:${r.category}`] || 0;
+        if (!best || used > best.used) best = { used, cap: r.monthlyCapRs, cat: r.category };
+      }
+      if (best) m[card.cardKey] = best;
+    }
+    return m;
+  }, [wallet, txns, spent]);
 
   return (
     <View style={styles.container}>
+      {tab === 'cards' ? (
+        <CardsPage
+          c={c} styles={styles} wallet={wallet} cardUsage={cardUsage} openPicker={openPicker}
+        />
+      ) : (
+        <View style={{ flex: 1 }}>
       <View style={styles.header}>
         <View style={styles.logoRow}>
           <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
@@ -359,7 +388,6 @@ export default function App() {
 
       <View style={styles.actions}>
         <Btn title="Read recent SMS" color={c.earn} primary onPress={readSms} />
-        <View style={styles.actionGap} />
         <Btn title="Change cards" color={c.muted} onPress={openPicker} />
       </View>
       {status ? <Text style={styles.status}>{status}</Text> : null}
@@ -398,6 +426,17 @@ export default function App() {
                   </Text>
                   <Chip color={c.warn}>
                     {shortName(item.excluded.card.name)} — needs ₹{item.excluded.reward.minTxnRs} min
+                  </Chip>
+                </View>
+              );
+            }
+            // UPI spend, no owned UPI card — suggest the best one to add.
+            if (item.suggested) {
+              return (
+                <View style={styles.metaRow}>
+                  <Text style={styles.meta}>UPI</Text>
+                  <Chip color={c.earn}>
+                    add {shortName(item.suggested.card.name)} — {item.suggested.reward.netPct}%
                   </Chip>
                 </View>
               );
@@ -447,6 +486,10 @@ export default function App() {
           </View>
         }
       />
+
+      </View>
+      )}
+      <Dock tab={tab} setTab={setTab} c={c} styles={styles} />
 
       <Modal visible={pickerOpen} animationType="slide">
         <View style={styles.pickerContainer}>
@@ -513,13 +556,137 @@ export default function App() {
               );
             }}
           />
-          <Btn title={`Save ${count} card${count === 1 ? '' : 's'}`} color={c.earn} primary onPress={saveWallet} />
-          <View style={styles.actionGap} />
-          <Btn title="Cancel" color={c.muted} onPress={() => setPickerOpen(false)} />
+          <View style={{ gap: 10, marginTop: 12 }}>
+            <Btn title={`Save ${count} card${count === 1 ? '' : 's'}`} color={c.earn} primary onPress={saveWallet} />
+            <Btn title="Cancel" color={c.muted} onPress={() => setPickerOpen(false)} />
+          </View>
         </View>
       </Modal>
 
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+    </View>
+  );
+}
+
+// --- Pages & dock ---------------------------------------------------------
+
+const issuerColors = {
+  HDFC: ['#003C8F', '#2E7BD6'], SBI: ['#1E3A8A', '#3B82F6'],
+  ICICI: ['#B91C1C', '#EF4444'], AXIS: ['#7F1D1D', '#DC2626'],
+  DCB: ['#312E81', '#6366F1'], AMEX: ['#065F46', '#10B981'],
+  RBL: ['#1F2937', '#4B5563'], IDFC: ['#1E40AF', '#2563EB'],
+};
+const issuerGradient = (c, issuer) =>
+  issuerColors[String(issuer).toUpperCase()] || [c.surface, c.earn + '22'];
+const humanize = (s) =>
+  (s || '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
+const cardType = (name) => (/debit/i.test(name) ? 'DEBIT' : 'CREDIT');
+const shortName = (n) => n.replace(/ (Credit|Debit|Charge) Card$/, '');
+
+function CardsPage({ c, styles, wallet, cardUsage, openPicker }) {
+  if (!wallet.length) {
+    return (
+      <View style={{ flex: 1 }}>
+        <View style={styles.header}>
+          <View style={styles.logoRow}>
+            <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+              <Text style={styles.markText}>₹</Text>
+            </LinearGradient>
+            <Text style={styles.logo}>YOUR CARDS</Text>
+          </View>
+        </View>
+        <View style={styles.empty}>
+          <Fan
+            c={c}
+            front={
+              <View style={styles.potentialBody}>
+                <Text style={styles.potentialLabel}>YOUR WALLET</Text>
+                <Text style={styles.emptyText}>
+                  No cards yet. Add them — every recommendation starts here.
+                </Text>
+              </View>
+            }
+          />
+          <View style={{ marginTop: 16, alignSelf: 'flex-start' }}>
+            <Btn title="Add your cards" color={c.earn} primary onPress={openPicker} />
+          </View>
+        </View>
+      </View>
+    );
+  }
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.header}>
+        <View style={styles.logoRow}>
+          <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+            <Text style={styles.markText}>₹</Text>
+          </LinearGradient>
+          <Text style={styles.logo}>YOUR CARDS</Text>
+        </View>
+        <Text style={styles.sub}>{wallet.length} cards · cap usage from this batch</Text>
+        <View style={[styles.actions, { marginTop: 10 }]}>
+          <Btn title="+ Add card" color={c.earn} onPress={openPicker} />
+        </View>
+      </View>
+      <FlatList
+        data={wallet}
+        keyExtractor={(x) => x.cardKey}
+        contentContainerStyle={{ paddingBottom: 16 }}
+        ItemSeparatorComponent={() => <View style={styles.hairline} />}
+        renderItem={({ item }) => {
+          const u = cardUsage[item.cardKey];
+          return (
+            <View style={styles.cardPageRow}>
+              <LinearGradient colors={issuerGradient(c, item.issuer)} style={styles.cardFace}>
+                <View style={styles.cardFaceTop}>
+                  <Text style={styles.cardFaceIssuer}>{item.issuer}</Text>
+                  <Text style={styles.cardFaceType}>{cardType(item.name)}</Text>
+                </View>
+                <View style={styles.cardFaceBottom}>
+                  <Text style={styles.cardFaceName} numberOfLines={1}>
+                    {shortName(item.name)}
+                  </Text>
+                  <Text style={styles.cardFaceLast4}>•••• {item.last4 || '—'}</Text>
+                </View>
+              </LinearGradient>
+              {u ? (
+                <View style={{ marginTop: 12 }}>
+                  <CapMeter
+                    used={u.used}
+                    cap={u.cap}
+                    c={c}
+                    label={`${humanize(u.cat)} cap — ₹${u.used.toLocaleString('en-IN')}/${u.cap.toLocaleString('en-IN')} used`}
+                  />
+                </View>
+              ) : (
+                <Text style={[styles.meta, { marginTop: 12 }]}>no capped spends in this batch</Text>
+              )}
+            </View>
+          );
+        }}
+      />
+    </View>
+  );
+}
+
+function Dock({ tab, setTab, c, styles }) {
+  const tabs = [
+    { id: 'spends', label: 'Spends' },
+    { id: 'cards', label: 'Cards' },
+  ];
+  return (
+    <View style={styles.dock}>
+      {tabs.map((t) => {
+        const on = tab === t.id;
+        return (
+          <Pressable key={t.id} style={styles.dockTab} onPress={() => setTab(t.id)}>
+            <Text style={[styles.dockLabel, { color: on ? c.earn : c.sub, fontWeight: on ? '800' : '600' }]}>
+              {t.label}
+            </Text>
+            {on ? <View style={[styles.dockDot, { backgroundColor: c.earn }]} /> : null}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -547,8 +714,7 @@ const makeStyles = (c) =>
     potentialValue: { fontSize: 26, fontWeight: '800', color: c.earn, fontVariant: ['tabular-nums'], marginTop: 2 },
     empty: { marginTop: 24 },
     emptyText: { fontSize: 13, color: c.sub, marginTop: 6, lineHeight: 19 },
-    actions: { flexDirection: 'row', marginBottom: 4, marginTop: 2 },
-    actionGap: { width: 10, height: 10 },
+    actions: { flexDirection: 'row', gap: 10, marginBottom: 4, marginTop: 2 },
     btn: {
       borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10,
       alignItems: 'center', justifyContent: 'center',
@@ -595,4 +761,24 @@ const makeStyles = (c) =>
       backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline, borderRadius: 8,
       padding: 8, marginTop: 8, fontSize: 13, color: c.text,
     },
+    dock: {
+      flexDirection: 'row', borderTopWidth: 1, borderTopColor: c.hairline,
+      backgroundColor: c.surface, marginHorizontal: -20, marginBottom: -20,
+      paddingTop: 4, paddingBottom: 18,
+    },
+    dockTab: { flex: 1, alignItems: 'center', paddingVertical: 10, gap: 4 },
+    dockLabel: { fontSize: 12, letterSpacing: 0.5 },
+    dockDot: { width: 4, height: 4, borderRadius: 2 },
+    cardPageRow: { paddingVertical: 16 },
+    cardFace: {
+      height: 168, borderRadius: 18, padding: 18, justifyContent: 'space-between',
+      elevation: 4, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14,
+      shadowOffset: { width: 0, height: 6 },
+    },
+    cardFaceTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    cardFaceIssuer: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', letterSpacing: 1.5 },
+    cardFaceType: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '700', letterSpacing: 1 },
+    cardFaceBottom: {},
+    cardFaceName: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+    cardFaceLast4: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '600', marginTop: 4, letterSpacing: 2 },
   });
