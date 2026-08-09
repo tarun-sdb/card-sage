@@ -34,11 +34,20 @@ const palettes = {
   },
 };
 
+// Theme-aware stylesheet hook. Leaf components render before App's scope
+// resolves, so they build their own styles instead of reaching for `styles`.
+const useStyles = () => {
+  const scheme = useColorScheme();
+  const c = palettes[scheme === 'dark' ? 'dark' : 'light'];
+  return { c, styles: useMemo(() => makeStyles(c), [c]) };
+};
+
 // --- Craft components -----------------------------------------------------
 
 // Wallet fan: two rotated cards peeking behind the front card. Front holds
 // the real content (potential summary / empty state).
 function Fan({ c, front }) {
+  const { styles } = useStyles();
   const rise = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(rise, {
@@ -90,6 +99,7 @@ function CountUp({ value, style }) {
 }
 
 function CapMeter({ used, cap, c, label }) {
+  const { styles } = useStyles();
   const a = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(a, { toValue: 1, duration: 400, delay: 200, useNativeDriver: true }).start();
@@ -120,6 +130,7 @@ function CapMeter({ used, cap, c, label }) {
 
 // Verdict pill — tinted bg + colored text. Color carries meaning.
 function Chip({ color, children }) {
+  const { styles } = useStyles();
   return (
     <View style={[styles.chip, { backgroundColor: color + '1A', borderColor: color + '40' }]}>
       <Text style={[styles.chipText, { color }]} numberOfLines={1}>{children}</Text>
@@ -128,6 +139,7 @@ function Chip({ color, children }) {
 }
 
 function Btn({ title, color, onPress, primary, small }) {
+  const { styles } = useStyles();
   const s = useRef(new Animated.Value(1)).current;
   return (
     <Animated.View style={{ transform: [{ scale: s }] }}>
