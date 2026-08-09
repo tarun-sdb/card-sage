@@ -1,0 +1,61 @@
+name: Android APK build
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Build variant'
+        type: choice
+        options: [debug, release]
+        default: debug
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: latest
+
+      - name: Install JS deps
+        working-directory: apps/mobile
+        run: npm ci
+
+      - name: Generate native project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Bump gradle heap for CI
+        working-directory: apps/mobile/android
+        run: sed -i 's/-Xmx2048m/-Xmx3584m/' gradle.properties
+
+      - name: Build APK
+        working-directory: apps/mobile/android
+        run: |
+          if [ "${{ github.event.inputs.profile }}" = "release" ]; then
+            ./gradlew assembleRelease --no-daemon
+          else
+            ./gradlew assembleDebug --no-daemon
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: card-sage-apk
+          path: |
+            apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: warn
