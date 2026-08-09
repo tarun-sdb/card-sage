@@ -12,16 +12,13 @@ const CARD = /(?:xx|x|ending|card(?:s)?)[\s:]*([\d]{4})/i;
 const MERCHANT = /(?:at|to)\s+([A-Za-z0-9][A-Za-z0-9&'.\- ]*?)(?=\s+(?:on|using|via|ref|txn|date|of|\.)\b|\bON\b|$)/i;
 
 const SPEND_WORDS = /(?:spent|debited|charged|paid|purchase|txn|transaction|used)/i;
-const CREDIT_WORDS = /(?:credited|received|refund|added)/i;
 
 export function parseSms(sender, body) {
   if (!body || !SPEND_WORDS.test(body)) return null;
-  if (CREDIT_WORDS.test(body) && !SPEND_WORDS.test(body)) return null;
 
   const amount = body.match(AMOUNT);
   const card = body.match(CARD);
   const merchant = body.match(MERCHANT);
-  const isCredit = CREDIT_WORDS.test(body);
 
   if (!amount) return null;
 
@@ -30,7 +27,5 @@ export function parseSms(sender, body) {
     amount: parseFloat(amount[1].replace(/,/g, "")),
     cardLast4: card ? card[1] : null,
     merchant: merchant ? merchant[1].trim().toUpperCase() : null,
-    isCredit,
-    raw: body,
   };
 }

@@ -4,7 +4,7 @@
 
 // Card earns effective ratePct (already cash-equivalent per dataset).
 // App fee reduces it: net = rate - fee.
-export function netRate(card, action, app) {
+function netRate(card, action, app) {
   const reward = rewardFor(card, action, app);
   if (!reward) return null;
   const fee = app?.feePct ?? 0;
@@ -60,11 +60,3 @@ export function recommend(userCards, action, app, spent = {}) {
     .sort((a, b) => b.reward.netPct - a.reward.netPct);
 }
 
-// Skip-card actions (bills where fees beat rewards). Returns true when even the
-// best card's net rate can't beat the fee-free default (bank app / UPI).
-export function shouldSkipCard(userCards, action, app, spent = {}) {
-  if (!action.note && !action.apps.some((a) => a.recommend === "skip-card")) return false;
-  const top = recommend(userCards, action, app, spent)[0];
-  // Net rate under ~0.5% isn't worth card friction; default is fee-free.
-  return !top || top.reward.netPct < 0.5;
-}

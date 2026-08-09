@@ -403,7 +403,7 @@ export default function App() {
               return (
                 <View>
                   <View style={styles.metaRow}>
-                    <Text style={styles.meta}>
+                    <Text style={styles.meta} numberOfLines={1}>
                       {item.cat || 'UPI'}
                       {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                     </Text>
@@ -420,7 +420,7 @@ export default function App() {
             if (item.excluded) {
               return (
                 <View style={styles.metaRow}>
-                  <Text style={styles.meta}>
+                  <Text style={styles.meta} numberOfLines={1}>
                     {item.cat || 'UPI'}
                     {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                   </Text>
@@ -703,7 +703,7 @@ const makeStyles = (c) =>
     markText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
     logo: { fontSize: 13, fontWeight: '800', letterSpacing: 2, color: c.text },
     sub: { fontSize: 13, color: c.sub, marginTop: 6 },
-    fan: { marginTop: 14, height: 92 },
+    fan: { marginTop: 12, height: 84 },
     fanCard: {
       position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
       borderRadius: 14, borderWidth: 1, borderColor: c.hairline, backgroundColor: c.surface,
@@ -735,10 +735,10 @@ const makeStyles = (c) =>
       flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
       marginTop: 6,
     },
-    meta: { fontSize: 11, color: c.sub, letterSpacing: 0.3, marginRight: 8 },
+    meta: { fontSize: 11, color: c.sub, letterSpacing: 0.3, marginRight: 8, flex: 1, flexShrink: 1 },
     chip: {
       borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1,
-      maxWidth: '62%',
+      flexShrink: 1,
     },
     chipText: { fontSize: 12, fontWeight: '600' },
     hairline: { height: 1, backgroundColor: c.hairline },

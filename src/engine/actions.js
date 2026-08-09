@@ -158,6 +158,17 @@ export const ACTIONS = [
     ],
   },
   {
+    id: "education",
+    label: "Education (courses/fees)",
+    category: "EDUCATION",
+    icon: "🎓",
+    apps: [
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com" },
+      { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com" },
+      { id: "amazon-pay", label: "Amazon Pay", feePct: 0, url: "https://www.amazon.in/pay" },
+    ],
+  },
+  {
     id: "rent",
     label: "Rent",
     category: "RENT",
