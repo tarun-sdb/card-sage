@@ -303,6 +303,17 @@ export default function App() {
     }
   };
 
+  // Auto-scan once per session once a wallet exists: fresh SMS data on open,
+  // no button press. loadTxns above shows last night's scan instantly; this
+  // refreshes it. Permission is cached after first grant.
+  const autoScanned = useRef(false);
+  useEffect(() => {
+    if (wallet.length && !autoScanned.current) {
+      autoScanned.current = true;
+      readSms();
+    }
+  }, [wallet.length]);
+
   // Spend per card+reward-row, for the cap meter. Routed through rewardFor so
   // UPI spends land on the UPI-scoped row that actually earns. When the SMS
   // last4 matches a registered card, only that card's cap depletes.
