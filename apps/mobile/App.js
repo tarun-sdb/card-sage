@@ -451,7 +451,7 @@ export default function App() {
           c={c} styles={styles} wallet={wallet} cardUsage={cardUsage} openPicker={openPicker}
         />
       ) : tab === 'portals' ? (
-        <PortalsPage c={c} styles={styles} wallet={wallet} spent={spent} />
+        <PortalsPage c={c} styles={styles} wallet={wallet} spent={spent} openPicker={openPicker} />
       ) : (
         <View style={{ flex: 1 }}>
       <View style={styles.header}>
@@ -734,7 +734,7 @@ const shareVerdict = async (item) => {
   }
 };
 
-function PortalsPage({ c, styles, wallet, spent }) {
+function PortalsPage({ c, styles, wallet, spent, openPicker }) {
   const [sel, setSel] = useState(null); // tapped action → recommendation modal
   return (
     <View style={{ flex: 1 }}>
@@ -795,7 +795,10 @@ function PortalsPage({ c, styles, wallet, spent }) {
 function PortalModal({ c, styles, action, wallet, spent, onClose, openPicker }) {
   const app = action.apps[0];
   const picks = recommend(wallet, action, app, spent);
-  const best = picks.filter((p) => !(p.reward.minTxnRs && 500 < p.reward.minTxnRs))[0] || picks[0];
+  // recommend already ranks by net rate; no min-txn filter here since the
+  // portal txn amount is unknown (hardcoded ₹500 threshold was wrong for
+  // big-ticket actions like flights).
+  const best = picks[0];
   // Catalog suggestion: the top card anyone could use here. For wallet loads
   // it's the co-brand pick per app; otherwise the best catalog earner.
   const ownedKeys = new Set(wallet.map((w) => w.cardKey));

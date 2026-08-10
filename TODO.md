@@ -8,6 +8,10 @@
 - [x] UPI bank detection: bank parsed from SMS sender/body, bank→card map
 - [x] UPI rewards: RuPay cards earn DEFAULT row on UPI (slice 1% no cap,
       SBI PhonePe 1% cap ₹2000), cap tracked per card+row
+- [x] Portal crash: openPicker not threaded to PortalsPage → ReferenceError
+      on portal tap (regression 825a6eb)
+- [x] Portal best-card: removed hardcoded ₹500 min-txn filter that wrongly
+      excluded top picks for big-ticket actions (flights etc.)
 
 ## Remaining
 - [ ] Build + install new APK on phone (current: card-sage-last4.apk, pre-UPI)
