@@ -263,9 +263,30 @@ export default function App() {
     setTab('portals'); // first-run landing: recommendations, not the empty ledger
   };
 
-  // SMS gives only bank + last4. Match against the registered wallet.
+  // Bank (from SMS sender/body) → wallet card. UPI credit lines keyed by the
+  // bank name the SMS names: SLICE → slice, SBI → PhonePe SBI, SUPERMONEY →
+  // super.money, etc. Normalizes "HDFC BANK"/"KOTAK MAHINDRA" forms.
+  const upiCardFor = (t) => {
+    if (!t.bank) return null;
+    const b = t.bank.replace(/ BANK| MAHINDRA| LIMITED/gi, '').trim().toUpperCase();
+    const bankName = (w) => (w.issuer || '').toUpperCase();
+    const match = wallet.find(
+      (w) =>
+        bankName(w) === b ||
+        (b === 'SLICE' && w.cardKey === 'slice') ||
+        (b === 'SBI' && /phonepe/i.test(w.name)) ||
+        (b === 'SUPERMONEY' && /super.?money|supermoney/i.test(w.name)) ||
+        (b === 'SALARYSE' && /salaryse/i.test(w.name))
+    );
+    return match || null;
+  };
+
+  // SMS gives only bank + last4. Match against the registered wallet:
+  // card last4 for swipe spends, bank name for UPI credit-line spends.
   const matchedFor = (t) =>
-    t.cardLast4 ? wallet.find((w) => w.last4 && w.last4 === t.cardLast4) : null;
+    t.cardLast4
+      ? wallet.find((w) => w.last4 && w.last4 === t.cardLast4)
+      : upiCardFor(t);
 
   const actionFor = (cat) => (cat ? ACTIONS.find((a) => a.category === cat) : UPI_ACTION);
 
@@ -470,12 +491,14 @@ export default function App() {
         ItemSeparatorComponent={() => <View style={styles.hairline} />}
         renderItem={({ item, index }) => {
           const verdict = (() => {
+            // UPI spends label the bank/issuer from the SMS, not "(UPI)".
+            const label = item.t.bank || item.cat || 'UPI';
             if (item.top) {
               return (
                 <View>
                   <View style={styles.metaRow}>
                     <Text style={styles.meta} numberOfLines={1}>
-                      {item.cat || 'UPI'}
+                      {label}
                       {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                     </Text>
                     <Chip color={c.earn} onPress={() => shareVerdict(item)}>
@@ -492,7 +515,7 @@ export default function App() {
               return (
                 <View style={styles.metaRow}>
                   <Text style={styles.meta} numberOfLines={1}>
-                    {item.cat || 'UPI'}
+                    {label}
                     {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                   </Text>
                   <Chip color={c.warn} onPress={() => shareVerdict(item)}>
@@ -505,7 +528,7 @@ export default function App() {
             return (
               <View style={styles.metaRow}>
                 <Text style={styles.meta}>
-                  {item.cat || 'UPI'}
+                  {label}
                   {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                 </Text>
                 <Chip color={c.muted}>

@@ -33,7 +33,14 @@ export function rewardFor(card, action, app) {
   // Generic rows only: unscoped, matching the action's category.
   if (action.category) {
     // UPI earns only from UPI-scoped rows; DEFAULT never applies to UPI.
-    if (action.category === "UPI") return null;
+    // Exception: RuPay cards (UPI credit lines — slice, SBI PhonePe, Kotak
+    // UPI…) earn their DEFAULT row on UPI payments.
+    if (action.category === "UPI") {
+      if (card.network === "RUPAY") {
+        return bestRow(rows.filter((r) => !scoped(r) && r.category === "DEFAULT"));
+      }
+      return null;
+    }
     const byCat = rows.filter((r) => !scoped(r) && r.category === action.category);
     if (byCat.length) return bestRow(byCat);
   }

@@ -8,15 +8,24 @@ const samples = [
   ["HDFCBK", "Rs 3,000.00 credited to your HDFC Bank Account. Ref 987654."],
   ["SBIINB", "Your OTP for SBI Card is 123456. Valid for 10 mins."],
   ["PROMO", "Special offer: 50% off on Zomato with HDFC cards. Apply now!"],
+  ["SLICE", "₹1,234.00 debited from Slice A/c 9876 via UPI at AMAZON"],
+  ["SBIPHONEPE", "Rs.450 debited from SBI Card A/c XX2345 via UPI at ZOMATO"],
+  ["HDFCBK", "Rs.500 debited from A/c XX1234 via UPI at PAYTM on 05-Aug-26"],
+  ["VPAY", "UPI Ref 999: Rs 2,500 debited from HDFC Bank A/c 1234 at BLINKIT"],
 ];
 
 let fail = 0;
 for (const [s, b] of samples) {
   const r = parseSms(s, b);
-  console.log(r ? `OK   ${b.slice(0, 45)}... -> ${JSON.stringify({ amount: r.amount, card: r.cardLast4, merchant: r.merchant, credit: r.isCredit })}` : `SKIP ${b.slice(0, 45)}...`);
+  console.log(r ? `OK   ${b.slice(0, 45)}... -> ${JSON.stringify({ amount: r.amount, card: r.cardLast4, merchant: r.merchant, bank: r.bank, credit: r.isCredit })}` : `SKIP ${b.slice(0, 45)}...`);
   if (r && r.amount <= 0) fail++;
 }
-// expect: 4 parsed, 3 skipped (credit, otp, promo)
+// expect: 8 parsed (4 old + 4 UPI), 3 skipped (credit, otp, promo)
 const parsed = samples.filter(([s,b]) => parseSms(s,b)).length;
-if (parsed !== 4) { console.log('FAIL: expected 4 parsed, got', parsed); fail++; }
+if (parsed !== 8) { console.log('FAIL: expected 8 parsed, got', parsed); fail++; }
+// UPI bank extraction: SLICE -> SLICE, SBIPHONEPE -> SBI, HDFCBK -> HDFC,
+// VPAY body "from HDFC Bank A/c" -> HDFC BANK
+const banks = ["SLICE", "SBI", "HDFC", "HDFC BANK"];
+const got = samples.filter(([s, b]) => parseSms(s, b)).slice(4).map(([s, b]) => parseSms(s, b).bank);
+if (JSON.stringify(got) !== JSON.stringify(banks)) { console.log('FAIL: bank mismatch', got); fail++; }
 process.exit(fail ? 1 : 0);
