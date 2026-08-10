@@ -1,14 +1,14 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, Easing, FlatList, Linking, Modal, PermissionsAndroid, Platform,
-  Pressable, Share, StyleSheet, Text, TextInput, useColorScheme, View,
+  Animated, Easing, FlatList, Linking, Modal, PanResponder, PermissionsAndroid, Platform,
+  Pressable, RefreshControl, SectionList, Share, StyleSheet, Text, TextInput, useColorScheme, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import cardsData from '../../src/data/cards.json';
 import { ACTIONS } from '../../src/engine/actions';
-import { recommend, rewardFor } from '../../src/engine/recommend';
+import { recommend, rewardFor, spentKey } from '../../src/engine/recommend';
 import { parseSms } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
@@ -18,6 +18,30 @@ import ShareReceiver from './modules/share-receiver';
 // Unmapped merchants (UPI person payments etc.) route through the UPI action.
 const UPI_ACTION = ACTIONS.find((a) => a.id === 'upi');
 const WALLET_KEY = 'card-sage:wallet';
+const THEME_KEY = 'card-sage:theme';
+
+// Effective theme, shared with leaf components (useStyles below). App
+// resolves system/default/dark/light and provides it; null = not loaded yet.
+const ThemeContext = createContext(null);
+const THEME_OPTIONS = [
+  { id: 'system', label: 'System' },
+  { id: 'dark', label: 'Dark' },
+  { id: 'light', label: 'Light' },
+];
+
+// Caps reset monthly — only this month's txns deplete a cap.
+const isCurrentMonth = (d) => {
+  const x = new Date(d);
+  const n = new Date();
+  return !isNaN(x.getTime()) && x.getFullYear() === n.getFullYear() && x.getMonth() === n.getMonth();
+};
+
+// "YYYY-MM" bucket for per-month cap pools ("2026-07", "2026-08").
+const monthKey = (d) => {
+  const x = new Date(d);
+  if (isNaN(x.getTime())) return 'Unknown';
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`;
+};
 
 // "The Ledger" — color encodes meaning only. earn = winning, warn = min not
 // met / near cap, danger = over cap, muted = unknowable (UPI person pays).
@@ -38,8 +62,11 @@ const palettes = {
 
 // Theme-aware stylesheet hook. Leaf components render before App's scope
 // resolves, so they build their own styles instead of reaching for `styles`.
+// The theme override (first-run choice) flows through ThemeContext.
 const useStyles = () => {
-  const scheme = useColorScheme();
+  const sysScheme = useColorScheme();
+  const override = useContext(ThemeContext);
+  const scheme = override || sysScheme;
   const c = palettes[scheme === 'dark' ? 'dark' : 'light'];
   return { c, styles: useMemo(() => makeStyles(c), [c]) };
 };
@@ -109,7 +136,7 @@ function CapMeter({ used, cap, c, label }) {
   const pct = used / cap;
   const color = pct >= 1 ? c.danger : pct >= 0.7 ? c.warn : c.earn;
   const segs = 12;
-  const filled = Math.min(segs, Math.max(0, Math.round(pct * segs)));
+  const filled = Math.min(segs, Math.max(0, Math.ceil(pct * segs)));
   return (
     <View style={styles.meterWrap}>
       <Animated.View style={[styles.meterSegs, { opacity: a }]}>
@@ -124,7 +151,7 @@ function CapMeter({ used, cap, c, label }) {
         ))}
       </Animated.View>
       <Text style={styles.meterLabel}>
-        {label ?? `₹${used.toLocaleString('en-IN')}/${cap.toLocaleString('en-IN')} used`}
+        {label ?? `₹${Math.round(used).toLocaleString('en-IN')}/${cap.toLocaleString('en-IN')} used`}
       </Text>
     </View>
   );
@@ -175,6 +202,46 @@ function Btn({ title, color, onPress, primary, small }) {
   );
 }
 
+// Swipe-left to reveal Remove. Snap open/closed, Remove sits on the right.
+const SWIPE_REVEAL = 96;
+function SwipeCard({ c, styles, children, onRemove }) {
+  const x = useRef(new Animated.Value(0)).current;
+  const openRef = useRef(false);
+  const pan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderMove: (_, g) =>
+        x.setValue(Math.min(0, g.dx + (openRef.current ? -SWIPE_REVEAL : 0))),
+      onPanResponderRelease: (_, g) => {
+        const shouldOpen = openRef.current ? g.dx < 40 : g.dx < -50 || g.vx < -0.3;
+        openRef.current = shouldOpen;
+        Animated.spring(x, {
+          toValue: shouldOpen ? -SWIPE_REVEAL : 0,
+          speed: 18, bounciness: 4, useNativeDriver: true,
+        }).start();
+      },
+      onPanResponderTerminate: () =>
+        Animated.spring(x, { toValue: 0, speed: 18, bounciness: 4, useNativeDriver: true }).start(),
+    })
+  ).current;
+  return (
+    <View>
+      <View
+        style={{
+          position: 'absolute', right: 0, top: 0, bottom: 0,
+          justifyContent: 'center', paddingRight: 4,
+        }}
+      >
+        <Btn title="Remove" color={c.danger} small onPress={onRemove} />
+      </View>
+      <Animated.View style={{ transform: [{ translateX: x }] }} {...pan.panHandlers}>
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
 // Row entrance: fade + rise, staggered by index.
 function Row({ index, children }) {
   const a = useRef(new Animated.Value(0)).current;
@@ -196,6 +263,42 @@ function Row({ index, children }) {
   );
 }
 
+// Mini theme preview swatch: light, dark, or split (system).
+function ThemeSwatch({ id }) {
+  const base = { width: 40, height: 26, borderRadius: 6, overflow: 'hidden', flexDirection: 'row' };
+  const half = (bg) => ({
+    flex: 1, padding: 4, backgroundColor: bg,
+    justifyContent: 'center',
+  });
+  const bar = (bg) => ({ height: 8, borderRadius: 3, backgroundColor: bg, opacity: 0.9 });
+  if (id === 'system') {
+    return (
+      <View style={base}>
+        <View style={half(palettes.light.bg)}>
+          <View style={bar(palettes.light.surface)} />
+        </View>
+        <View style={half(palettes.dark.bg)}>
+          <View style={bar(palettes.dark.surface)} />
+        </View>
+      </View>
+    );
+  }
+  const p = palettes[id === 'dark' ? 'dark' : 'light'];
+  return (
+    <View style={[base, { padding: 4, backgroundColor: p.bg }]}>
+      <View style={[bar(p.surface), { flex: 1 }]} />
+    </View>
+  );
+}
+
+// Live caption under each option; System reports the phone's current mode.
+const themeCaption = (id, sysScheme) =>
+  id === 'system'
+    ? `${sysScheme === 'dark' ? 'Dark' : 'Light'} now — follows your phone`
+    : id === 'dark'
+      ? 'Always dark'
+      : 'Always light';
+
 // --- App -------------------------------------------------------------------
 
 export default function App() {
@@ -208,10 +311,42 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState({});
   const [shared, setShared] = useState(null); // { text, action, picks } from share-sheet intake
+  const [inspect, setInspect] = useState(null); // tapped txn → SMS debug modal
+  const [themePref, setThemePref] = useState(null); // null = loading, else system|dark|light
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState({}); // month title → rows hidden
+  const [busy, setBusy] = useState(false); // SMS scan in flight (pull-to-refresh spinner)
 
-  const scheme = useColorScheme();
+  // First run: load saved theme, then open the onboarding picker if it's new.
+  useEffect(() => {
+    AsyncStorage.getItem(THEME_KEY).then((raw) => {
+      setThemePref(raw || 'system');
+      if (!raw) setThemeOpen(true);
+    });
+  }, []);
+
+  const pickTheme = (v) => {
+    setThemePref(v);
+    AsyncStorage.setItem(THEME_KEY, v);
+  };
+
+  const sysScheme = useColorScheme();
+  const scheme = themePref === 'light' || themePref === 'dark' ? themePref : sysScheme;
   const c = palettes[scheme === 'dark' ? 'dark' : 'light'];
   const styles = useMemo(() => makeStyles(c), [c]);
+
+  // Page swipe: slide the new tab in from the direction of travel.
+  const tabX = useRef(new Animated.Value(0)).current;
+  const prevTab = useRef(tab);
+  useEffect(() => {
+    const order = { spends: 0, portals: 1, cards: 2 };
+    const dir = order[tab] > order[prevTab.current] ? 1 : -1;
+    prevTab.current = tab;
+    tabX.setValue(dir * 30);
+    Animated.spring(tabX, {
+      toValue: 0, speed: 20, bounciness: 5, useNativeDriver: true,
+    }).start();
+  }, [tab]);
 
   useEffect(() => {
     registerNightlyScan();
@@ -248,6 +383,16 @@ export default function App() {
     setSelected(Object.fromEntries(wallet.map((c) => [c.cardKey, c.last4 || ''])));
     setQuery('');
     setPickerOpen(true);
+  };
+
+  // Cards page removal — picker is add-only now.
+  const removeCard = (cardKey) => {
+    const cards = wallet.filter((c) => c.cardKey !== cardKey);
+    setWallet(cards);
+    AsyncStorage.setItem(
+      WALLET_KEY,
+      JSON.stringify(cards.map((c) => ({ cardKey: c.cardKey, last4: c.last4 })))
+    );
   };
 
   const saveWallet = () => {
@@ -290,6 +435,21 @@ export default function App() {
 
   const actionFor = (cat) => (cat ? ACTIONS.find((a) => a.category === cat) : UPI_ACTION);
 
+  // Add one txn's reward to a cap pool (shared by month/cumulative memos).
+  const fillPool = (pool, t) => {
+    const action = actionFor(merchantCategory(t.merchant));
+    if (!action) return;
+    const app = action.apps[0];
+    const scope = matchedFor(t) ? [matchedFor(t)] : wallet;
+    for (const c of scope) {
+      const r = rewardFor(c, action, app);
+      if (r && r.monthlyCapRs != null && (r.minTxnRs == null || t.amount >= r.minTxnRs)) {
+        const key = spentKey(c.cardKey, r);
+        pool[key] = (pool[key] || 0) + (t.amount * r.ratePct) / 100;
+      }
+    }
+  };
+
   const readSms = async () => {
     if (Platform.OS !== 'android') {
       setStatus('SMS read is Android-only.');
@@ -301,6 +461,7 @@ export default function App() {
       return;
     }
     try {
+      setBusy(true);
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.READ_SMS
       );
@@ -310,7 +471,7 @@ export default function App() {
       }
       const messages = await SmsReader.readSms(200);
       const parsed = messages
-        .map((m) => ({ ...parseSms(m.sender, m.body), date: m.date }))
+        .map((m) => ({ ...parseSms(m.sender, m.body), date: m.date, raw: m.body }))
         .filter((t) => t.amount != null);
       setBatch((b) => b + 1); // remount rows → re-stagger
       setTxns(parsed);
@@ -324,6 +485,8 @@ export default function App() {
       setStatus(`Parsed ${parsed.length} card transactions from ${messages.length} messages.`);
     } catch (e) {
       setStatus('Error: ' + e.message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -364,12 +527,35 @@ export default function App() {
     }
   }, [wallet.length]);
 
-  // Spend per card+reward-row, for the cap meter. Routed through rewardFor so
-  // UPI spends land on the UPI-scoped row that actually earns. When the SMS
-  // last4 matches a registered card, only that card's cap depletes.
+  // Reward accrued per card+reward-row, for the cap meter. The cap is in
+  // Progressive fills: for each txn, the pool as it stood after every
+  // *earlier* txn in that month. Ledger newest-first → top row shows the
+  // full month, rows below show partial fills ("cashback so far").
+  const cumSpent = useMemo(() => {
+    const m = new Array(txns.length);
+    for (let i = 0; i < txns.length; i++) {
+      const t = txns[i];
+      const tDate = new Date(t.date).getTime();
+      const pool = {};
+      for (const u of txns) {
+        if (monthKey(u.date) !== monthKey(t.date)) continue;
+        if (new Date(u.date).getTime() > tDate) continue; // only through this txn
+        fillPool(pool, u);
+      }
+      m[i] = pool;
+    }
+    return m;
+  }, [txns, wallet]);
+
+  // reward units (cashback ₹/points), so "used" = txn amount × rate, not the
+  // raw amount — otherwise ₹28k spend against a ₹400 cap shows 28305/400.
+  // Routed through rewardFor so UPI spends land on the UPI-scoped row that
+  // actually earns. When the SMS last4 matches a registered card, only that
+  // card's cap depletes.
   const spent = useMemo(() => {
     const m = {};
     for (const t of txns) {
+      if (!isCurrentMonth(t.date)) continue; // caps reset monthly
       const action = actionFor(merchantCategory(t.merchant));
       if (!action) continue;
       const app = action.apps[0];
@@ -378,8 +564,8 @@ export default function App() {
         const r = rewardFor(c, action, app);
         // Minimum-transaction rows: spends below the threshold earn nothing.
         if (r && r.monthlyCapRs != null && (r.minTxnRs == null || t.amount >= r.minTxnRs)) {
-          const key = `${c.cardKey}:${r.category}`;
-          m[key] = (m[key] || 0) + t.amount;
+          const key = spentKey(c.cardKey, r);
+          m[key] = (m[key] || 0) + (t.amount * r.ratePct) / 100;
         }
       }
     }
@@ -387,22 +573,44 @@ export default function App() {
   }, [txns, wallet]);
 
   const rows = useMemo(() => {
-    return txns.slice(0, 30).map((t) => {
+    return txns.slice(0, 30).map((t, i) => {
       const cat = merchantCategory(t.merchant);
       const action = actionFor(cat);
       const app = action.apps[0];
       const matched = matchedFor(t);
       const scope = matched ? [matched] : wallet;
+      // Cap pools are per month AND per point-in-time — each row's meter
+      // shows the pool as it stood after that txn, filling progressively.
+      const spentM = cumSpent[i] || {};
       // Cards with min-txn thresholds below this amount earn nothing here.
       const earning = (p) => !(p.reward.minTxnRs && t.amount < p.reward.minTxnRs);
-      const rawPicks = recommend(scope, action, app, spent);
+      const rawPicks = recommend(scope, action, app, spentM);
       const picks = rawPicks.filter(earning);
       const excluded = rawPicks.find((p) => !earning(p));
       // When the used card is known, also show the best alternative.
-      const best = matched ? recommend(wallet, action, app, spent).filter(earning)[0] : null;
-      return { t, cat, upi: !cat, matched, top: picks[0], best, excluded };
+      const best = matched ? recommend(wallet, action, app, spentM).filter(earning)[0] : null;
+      return { t, cat, upi: !cat && !t.cardLast4, matched, top: picks[0], best, excluded };
     });
-  }, [txns, wallet, spent]);
+  }, [txns, wallet, cumSpent]);
+
+  // Ledger grouped by month; header = month + scanned total, tap collapses.
+  // Rows keep their global index so expand/collapse doesn't reshape keys.
+  const sections = useMemo(() => {
+    const byMonth = new Map();
+    rows.forEach((r, i) => {
+      const d = new Date(r.t.date);
+      const title = isNaN(d.getTime())
+        ? 'Unknown'
+        : d.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+      if (!byMonth.has(title)) byMonth.set(title, []);
+      byMonth.get(title).push({ ...r, i });
+    });
+    return [...byMonth].map(([title, data]) => ({
+      title,
+      total: data.reduce((s, r) => s + r.t.amount, 0),
+      data: collapsed[title] ? [] : data,
+    }));
+  }, [rows, collapsed]);
 
   // Header: potential cashback from card-matched rows only, bounded by
   // remaining cap. Labeled "potential" — SMS batch is not a statement.
@@ -410,6 +618,7 @@ export default function App() {
     let scanned = 0;
     let potential = 0;
     for (const t of txns) {
+      if (!isCurrentMonth(t.date)) continue; // caps reset monthly
       scanned += t.amount;
       const matched = matchedFor(t);
       if (!matched) continue;
@@ -417,7 +626,7 @@ export default function App() {
       const r = action && rewardFor(matched, action, action.apps[0]);
       if (!r || (r.minTxnRs && t.amount < r.minTxnRs)) continue;
       const cap = r.monthlyCapRs;
-      const key = `${matched.cardKey}:${r.category}`;
+      const key = spentKey(matched.cardKey, r);
       const remaining = cap != null ? Math.max(0, cap - (spent[key] || 0)) : Infinity;
       potential += Math.min((r.ratePct / 100) * t.amount, remaining);
     }
@@ -425,6 +634,34 @@ export default function App() {
   }, [txns, wallet, spent]);
 
   const count = Object.keys(selected).filter((k) => selected[k]).length;
+
+  // Spend-based recommender: every card (owned or not) × this month's txns →
+  // realistic earnings (spend × rate, held at the monthly cap). NOT the cap
+  // number — a recharge-only spender sees ~10% of recharges, not ₹2000.
+  const cardEarnings = useMemo(() => {
+    const out = [];
+    for (const card of cardsData.cards) {
+      let total = 0;
+      const byCat = {};
+      for (const t of txns) {
+        if (!isCurrentMonth(t.date)) continue;
+        const action = actionFor(merchantCategory(t.merchant));
+        if (!action) continue;
+        const r = rewardFor(card, action, action.apps[0]);
+        if (!r) continue;
+        if (r.minTxnRs != null && t.amount < r.minTxnRs) continue;
+        const e = (t.amount * r.ratePct) / 100;
+        byCat[r.category] = (byCat[r.category] || 0) + e;
+        if (r.monthlyCapRs == null) total += e;
+        else total += Math.min(e, Math.max(0, r.monthlyCapRs - (byCat[r.category] - e)));
+      }
+      if (total > 0) {
+        const topCat = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a])[0];
+        out.push({ card, earned: total, drivers: byCat, topCat });
+      }
+    }
+    return out.sort((a, b) => b.earned - a.earned);
+  }, [txns, wallet]);
 
   // Per-card cap usage: the most-consumed capped reward row per card.
   const cardUsage = useMemo(() => {
@@ -436,7 +673,7 @@ export default function App() {
         const r = action && rewardFor(card, action, action.apps[0]);
         if (!r || r.monthlyCapRs == null) continue;
         if (r.minTxnRs && t.amount < r.minTxnRs) continue;
-        const used = spent[`${card.cardKey}:${r.category}`] || 0;
+        const used = spent[spentKey(card.cardKey, r)] || 0;
         if (!best || used > best.used) best = { used, cap: r.monthlyCapRs, cat: r.category };
       }
       if (best) m[card.cardKey] = best;
@@ -445,10 +682,12 @@ export default function App() {
   }, [wallet, txns, spent]);
 
   return (
-    <View style={styles.container}>
+    <ThemeContext.Provider value={scheme}>
+      <View style={styles.container}>
       {tab === 'cards' ? (
         <CardsPage
           c={c} styles={styles} wallet={wallet} cardUsage={cardUsage} openPicker={openPicker}
+          onRemove={removeCard} earnings={cardEarnings}
         />
       ) : tab === 'portals' ? (
         <PortalsPage c={c} styles={styles} wallet={wallet} spent={spent} openPicker={openPicker} />
@@ -480,19 +719,41 @@ export default function App() {
 
       <View style={styles.actions}>
         <Btn title="Read recent SMS" color={c.earn} primary onPress={readSms} />
-        <Btn title="Change cards" color={c.muted} onPress={openPicker} />
       </View>
       {status ? <Text style={styles.status}>{status}</Text> : null}
 
-      <FlatList
-        data={rows}
-        keyExtractor={(_, i) => `${batch}:${i}`}
+      <SectionList
+        sections={sections}
+        keyExtractor={(item) => `${batch}:${item.i}`}
+        stickySectionHeadersEnabled={false}
         style={{ width: '100%', marginTop: 8 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={busy}
+            onRefresh={readSms}
+            colors={[c.earn]}
+            tintColor={c.earn}
+            progressBackgroundColor={c.surface}
+          />
+        }
         ItemSeparatorComponent={() => <View style={styles.hairline} />}
+        renderSectionHeader={({ section }) => (
+          <Pressable
+            style={styles.monthHeader}
+            onPress={() => setCollapsed((c) => ({ ...c, [section.title]: !c[section.title] }))}
+          >
+            <Text style={styles.monthTitle}>{section.title}</Text>
+            <Text style={styles.monthTotal}>₹{section.total.toLocaleString('en-IN')} scanned</Text>
+            <Text style={styles.monthChevron}>
+              {collapsed[section.title] ? '▸' : '▾'}
+            </Text>
+          </Pressable>
+        )}
         renderItem={({ item, index }) => {
           const verdict = (() => {
-            // UPI spends label the bank/issuer from the SMS, not "(UPI)".
-            const label = item.t.bank || item.cat || 'UPI';
+            // Card-lit txns are card spends even without a known merchant;
+            // only cardless UPI person-pays are not.
+            const label = item.t.bank || item.cat || (item.t.cardLast4 ? 'Unknown merchant' : 'UPI');
             if (item.top) {
               return (
                 <View>
@@ -506,7 +767,12 @@ export default function App() {
                     </Chip>
                   </View>
                   {item.top.cap != null ? (
-                    <CapMeter used={item.top.used} cap={item.top.cap} c={c} />
+                    <CapMeter
+                      used={item.top.used}
+                      cap={item.top.cap}
+                      c={c}
+                      label={`₹${Math.round(item.top.used).toLocaleString('en-IN')} cashback after this`}
+                    />
                   ) : null}
                 </View>
               );
@@ -539,15 +805,15 @@ export default function App() {
           })();
           return (
             <Row index={index}>
-              <View style={styles.row}>
+              <Pressable style={styles.row} onPress={() => setInspect(item.t)}>
                 <View style={styles.rowTop}>
                   <Text style={styles.merchant} numberOfLines={1}>
-                    {item.t.merchant || '(upi)'}
+                    {item.t.merchant || (item.t.cardLast4 ? 'Unknown merchant' : 'UPI')}
                   </Text>
                   <Text style={styles.amt}>₹{item.t.amount.toLocaleString('en-IN')}</Text>
                 </View>
                 {verdict}
-              </View>
+              </Pressable>
             </Row>
           );
         }}
@@ -565,7 +831,14 @@ export default function App() {
                   </Text>
                 </View>
               }
-            />
+/>
+            <View style={{ marginTop: 16, alignSelf: 'flex-start' }}>
+              {wallet.length ? (
+                <Btn title="📩 Scan SMS" color={c.earn} primary onPress={readSms} />
+              ) : (
+                <Btn title="＋ Add your cards" color={c.earn} primary onPress={openPicker} />
+              )}
+            </View>
           </View>
         }
       />
@@ -592,16 +865,26 @@ export default function App() {
             autoFocus
           />
           <FlatList
-            data={cardsData.cards.filter(
-              (c) => !query || c.name.toLowerCase().includes(query.toLowerCase())
-            )}
+            data={(() => {
+              const q = query.toLowerCase();
+              const all = cardsData.cards.filter(
+                (c) =>
+                  !q ||
+                  c.name.toLowerCase().includes(q) ||
+                  (c.issuer || '').toLowerCase().includes(q)
+              );
+              const on = (c) => selected[c.cardKey] !== undefined;
+              // Pick your existing cards first — cancelling is one tap away.
+              return [...all.filter(on), ...all.filter((c) => !on(c))];
+            })()}
             keyExtractor={(c) => c.cardKey}
             keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 20 }}
             ItemSeparatorComponent={() => <View style={styles.hairline} />}
             renderItem={({ item }) => {
               const on = selected[item.cardKey] !== undefined;
               return (
-                <View style={[styles.cardRow, on && { borderLeftColor: c.earn }]}>
+                <View style={[styles.cardRow, on && styles.cardRowOn]}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.cardName, on && { color: c.earn }]}>{item.name}</Text>
                     <Text style={styles.cardSub}>
@@ -622,19 +905,18 @@ export default function App() {
                       />
                     ) : null}
                   </View>
-                  <Btn
-                    title={on ? 'Remove' : 'Add'}
-                    color={on ? c.danger : c.earn}
-                    small
-                    onPress={() =>
-                      setSelected((s) => {
-                        const n = { ...s };
-                        if (s[item.cardKey] !== undefined) delete n[item.cardKey];
-                        else n[item.cardKey] = '';
-                        return n;
-                      })
-                    }
-                  />
+                  <View style={{ width: 96 }}>
+                    <Btn
+                      title={on ? 'Added' : 'Add'}
+                      color={on ? c.sub : c.earn}
+                      small
+                      onPress={() =>
+                        on
+                          ? null // add-only: un-adding happens on the Cards page
+                          : setSelected((s) => ({ ...s, [item.cardKey]: '' }))
+                      }
+                    />
+                  </View>
                 </View>
               );
             }}
@@ -690,8 +972,88 @@ export default function App() {
         </Modal>
       ) : null}
 
+      {inspect ? (
+        <Modal visible animationType="slide" onRequestClose={() => setInspect(null)}>
+          <View style={styles.pickerContainer}>
+            <View style={styles.logoRow}>
+              <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+                <Text style={styles.markText}>₹</Text>
+              </LinearGradient>
+              <Text style={styles.logo}>IS THIS RIGHT?</Text>
+            </View>
+            <View style={styles.debugBox}>
+              <Text style={styles.cardSub} selectable>
+                {inspect.raw || '(no raw body — persisted txn)'}
+              </Text>
+            </View>
+            <Text style={styles.status}>
+              Found ₹{inspect.amount.toLocaleString('en-IN')} · {inspect.merchant || 'UPI'} ·{' '}
+              {merchantCategory(inspect.merchant) || 'unmapped'}. Wrong? Tap thumbs-down — the
+              SMS text is shared back to us for fixing.
+            </Text>
+            <View style={{ gap: 10, marginTop: 20 }}>
+              <Btn
+                title="👍 Looks right"
+                color={c.earn}
+                primary
+                onPress={() => setInspect(null)}
+              />
+              <Btn
+                title="👎 Not right"
+                color={c.danger}
+                onPress={() => {
+                  setInspect(null);
+                  Share.share({
+                    message: `[CardSage ✗] ${inspect.sender} ${new Date(inspect.date).toISOString()}\n${inspect.raw}\n→ ₹${inspect.amount} · ${inspect.merchant || 'UPI'} · ${merchantCategory(inspect.merchant) || 'unmapped'}`,
+                  });
+                }}
+              />
+              <Btn title="Close" color={c.muted} onPress={() => setInspect(null)} />
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+
+      {/* First-run theme onboarding: tap to re-theme live behind this screen. */}
+      <Modal visible={themeOpen} animationType="fade">
+        <View style={styles.pickerContainer}>
+          <View style={styles.logoRow}>
+            <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+              <Text style={styles.markText}>₹</Text>
+            </LinearGradient>
+            <Text style={styles.logo}>PICK YOUR THEME</Text>
+          </View>
+          <Text style={styles.sub}>
+            Tap to preview live — the app behind this screen flips instantly.
+          </Text>
+          {THEME_OPTIONS.map((o) => {
+            const on = themePref === o.id;
+            return (
+              <Pressable
+                key={o.id}
+                style={[styles.themeRow, on && { borderColor: c.earn + '88', backgroundColor: c.earn + '0F' }]}
+                onPress={() => pickTheme(o.id)}
+              >
+                <ThemeSwatch id={o.id} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cardName, on && { color: c.earn }]}>{o.label}</Text>
+                  <Text style={styles.cardSub}>{themeCaption(o.id, sysScheme)}</Text>
+                </View>
+                <View style={[styles.radio, on && { borderColor: c.earn }]}>
+                  {on ? <View style={[styles.radioDot, { backgroundColor: c.earn }]} /> : null}
+                </View>
+              </Pressable>
+            );
+          })}
+          <View style={{ marginTop: 24 }}>
+            <Btn title="Continue" color={c.earn} onPress={() => setThemeOpen(false)} />
+          </View>
+        </View>
+      </Modal>
+
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-    </View>
+      </View>
+    </ThemeContext.Provider>
   );
 }
 
@@ -709,6 +1071,18 @@ const humanize = (s) =>
   (s || '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 const cardType = (name) => (/debit/i.test(name) ? 'DEBIT' : 'CREDIT');
 const shortName = (n) => n.replace(/ (Credit|Debit|Charge) Card$/, '');
+// Portal accent: color dot per action, matches card-face palette language.
+const PORTAL_COLORS = {
+  'mobile-recharge': ['#2563EB', '#60A5FA'], 'electricity-bill': ['#F59E0B', '#FBBF24'],
+  'dth-recharge': ['#7C3AED', '#A78BFA'], 'gas-cylinder': ['#DC2626', '#F87171'],
+  insurance: ['#0D9488', '#2DD4BF'], 'credit-card-bill': ['#374151', '#6B7280'],
+  fastag: ['#0891B2', '#22D3EE'], fuel: ['#B45309', '#F59E0B'],
+  ott: ['#DB2777', '#F472B6'], grocery: ['#16A34A', '#4ADE80'],
+  'online-shopping': ['#EA580C', '#FB923C'], dining: ['#E11D48', '#FB7185'],
+  travel: ['#1D4ED8', '#3B82F6'], education: ['#6D28D9', '#8B5CF6'],
+  rent: ['#334155', '#64748B'], 'wallet-load': ['#047857', '#34D399'],
+};
+const portalGradient = (c, id) => PORTAL_COLORS[id] || [c.surface, c.earn + '22'];
 
 // Share a single recommendation verdict via the system share sheet.
 const shareVerdict = async (item) => {
@@ -757,9 +1131,12 @@ function PortalsPage({ c, styles, wallet, spent, openPicker }) {
         renderItem={({ item }) => (
           <Pressable style={styles.portalRow} onPress={() => setSel(item)}>
             <View style={styles.rowTop}>
-              <Text style={styles.merchant} numberOfLines={1}>
-                {item.icon} {item.label}
-              </Text>
+              <View style={styles.portalTitleRow}>
+                <View style={[styles.portalDot, { backgroundColor: portalGradient(c, item.id)[0] }]} />
+                <Text style={styles.merchant} numberOfLines={1}>
+                  {item.label}
+                </Text>
+              </View>
               <Text style={[styles.meta, { flex: 0 }]}>tap →</Text>
             </View>
             {item.note ? <Text style={styles.cardSub}>{item.note}</Text> : null}
@@ -799,34 +1176,15 @@ function PortalModal({ c, styles, action, wallet, spent, onClose, openPicker }) 
   // portal txn amount is unknown (hardcoded ₹500 threshold was wrong for
   // big-ticket actions like flights).
   const best = picks[0];
-  // Catalog suggestion: the top card anyone could use here. For wallet loads
-  // it's the co-brand pick per app; otherwise the best catalog earner.
-  const ownedKeys = new Set(wallet.map((w) => w.cardKey));
-  // Explicit per-wallet pick (e.g. PayZapp → HDFC Millennia) wins; otherwise
-  // the best catalog earner for the action.
-  let suggested = null;
-  if (app.cardKey) {
-    const card = cardsData.cards.find((cd) => cd.cardKey === app.cardKey);
-    if (card) {
-      const r = rewardFor(card, action, app);
-      if (r) suggested = { card, reward: { ...r, netPct: r.ratePct - (app.feePct || 0) } };
-    }
-  }
-  if (!suggested) {
-    const catalog = recommend(cardsData.cards, action, app, spent).filter(
-      (p) => !ownedKeys.has(p.card.cardKey)
-    );
-    suggested = catalog[0] || null;
-  }
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <View style={styles.pickerContainer}>
-        <View style={styles.logoRow}>
-          <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
-            <Text style={styles.markText}>₹</Text>
-          </LinearGradient>
-          <Text style={styles.logo}>{action.icon} {action.label.toUpperCase()}</Text>
-        </View>
+<View style={styles.logoRow}>
+            <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+              <Text style={styles.markText}>₹</Text>
+            </LinearGradient>
+            <Text style={styles.logo}>{action.label.toUpperCase()}</Text>
+          </View>
 
         <View style={{ marginTop: 14 }}>
           <Text style={styles.potentialLabel}>BEST CARD</Text>
@@ -844,21 +1202,6 @@ function PortalModal({ c, styles, action, wallet, spent, onClose, openPicker }) 
           ) : (
             <Text style={styles.status}>No wallet card earns here — add one in Cards.</Text>
           )}
-          {suggested && suggested.card.cardKey !== (best && best.card.cardKey) ? (
-            <Pressable
-              style={[styles.portalApp, { marginTop: 8, backgroundColor: c.surface }]}
-              onPress={openPicker}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardName}>+ Add {shortName(suggested.card.name)}</Text>
-                <Text style={styles.cardSub}>
-                  {suggested.reward.netPct}% net cashback
-                  {suggested.reward.monthlyCapRs != null ? ` · cap ₹${suggested.reward.monthlyCapRs.toLocaleString('en-IN')}` : ''}
-                </Text>
-              </View>
-              <Chip color={c.warn}>{suggested.reward.netPct}%</Chip>
-            </Pressable>
-          ) : null}
         </View>
 
         <Text style={[styles.potentialLabel, { marginTop: 18 }]}>WHERE TO PAY</Text>
@@ -887,7 +1230,7 @@ function PortalModal({ c, styles, action, wallet, spent, onClose, openPicker }) 
   );
 }
 
-function CardsPage({ c, styles, wallet, cardUsage, openPicker }) {
+function CardsPage({ c, styles, wallet, cardUsage, openPicker, onRemove, earnings }) {
   if (!wallet.length) {
     return (
       <View style={{ flex: 1 }}>
@@ -932,6 +1275,35 @@ function CardsPage({ c, styles, wallet, cardUsage, openPicker }) {
           <Btn title="+ Add card" color={c.earn} onPress={openPicker} />
         </View>
       </View>
+      {earnings.length ? (
+        <View style={styles.earnPanel}>
+          <Text style={styles.potentialLabel}>BEST FOR YOUR SPENDS</Text>
+          {earnings.slice(0, 3).map((e, i) => {
+            const owned = wallet.some((w) => w.cardKey === e.card.cardKey);
+            return (
+              <Pressable
+                key={e.card.cardKey}
+                style={styles.earnRow}
+                onPress={owned ? null : openPicker}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cardName, i === 0 && { color: c.earn, fontWeight: '800' }]}>
+                    {i === 0 ? '★ ' : ''}{shortName(e.card.name)}
+                  </Text>
+                  <Text style={styles.cardSub}>
+                    {humanize(e.topCat).toLowerCase()} · ₹{Math.round(e.earned).toLocaleString('en-IN')}/mo
+                  </Text>
+                </View>
+                {owned ? (
+                  <Chip color={c.earn}>in wallet</Chip>
+                ) : (
+                  <Chip color={c.warn} onPress={openPicker}>add</Chip>
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
       <FlatList
         data={wallet}
         keyExtractor={(x) => x.cardKey}
@@ -940,32 +1312,34 @@ function CardsPage({ c, styles, wallet, cardUsage, openPicker }) {
         renderItem={({ item }) => {
           const u = cardUsage[item.cardKey];
           return (
-            <View style={styles.cardPageRow}>
-              <LinearGradient colors={issuerGradient(c, item.issuer)} style={styles.cardFace}>
-                <View style={styles.cardFaceTop}>
-                  <Text style={styles.cardFaceIssuer}>{item.issuer}</Text>
-                  <Text style={styles.cardFaceType}>{cardType(item.name)}</Text>
-                </View>
-                <View style={styles.cardFaceBottom}>
-                  <Text style={styles.cardFaceName} numberOfLines={1}>
-                    {shortName(item.name)}
-                  </Text>
-                  <Text style={styles.cardFaceLast4}>•••• {item.last4 || '—'}</Text>
-                </View>
-              </LinearGradient>
-              {u ? (
-                <View style={{ marginTop: 12 }}>
-                  <CapMeter
-                    used={u.used}
-                    cap={u.cap}
-                    c={c}
-                    label={`${humanize(u.cat)} cap — ₹${u.used.toLocaleString('en-IN')}/${u.cap.toLocaleString('en-IN')} used`}
-                  />
-                </View>
-              ) : (
-                <Text style={[styles.meta, { marginTop: 12 }]}>no capped spends in this batch</Text>
-              )}
-            </View>
+            <SwipeCard c={c} styles={styles} onRemove={() => onRemove(item.cardKey)}>
+              <View style={styles.cardPageRow}>
+                <LinearGradient colors={issuerGradient(c, item.issuer)} style={styles.cardFace}>
+                  <View style={styles.cardFaceTop}>
+                    <Text style={styles.cardFaceIssuer}>{item.issuer}</Text>
+                    <Text style={styles.cardFaceType}>{cardType(item.name)}</Text>
+                  </View>
+                  <View style={styles.cardFaceBottom}>
+                    <Text style={styles.cardFaceName} numberOfLines={1}>
+                      {shortName(item.name)}
+                    </Text>
+                    <Text style={styles.cardFaceLast4}>•••• {item.last4 || '—'}</Text>
+                  </View>
+                </LinearGradient>
+                {u ? (
+                  <View style={{ marginTop: 12 }}>
+                    <CapMeter
+                      used={u.used}
+                      cap={u.cap}
+                      c={c}
+                      label={`${humanize(u.cat)} cap — ₹${u.used.toLocaleString('en-IN')}/${u.cap.toLocaleString('en-IN')} used`}
+                    />
+                  </View>
+                ) : (
+                  <Text style={[styles.meta, { marginTop: 12 }]}>no capped spends in this batch</Text>
+                )}
+              </View>
+            </SwipeCard>
           );
         }}
       />
@@ -999,7 +1373,7 @@ function Dock({ tab, setTab, c, styles }) {
 const makeStyles = (c) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bg, padding: 20, paddingTop: 60 },
-    header: { marginBottom: 14 },
+    header: { marginBottom: 20 },
     logoRow: { flexDirection: 'row', alignItems: 'center' },
     mark: {
       width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
@@ -1008,7 +1382,7 @@ const makeStyles = (c) =>
     markText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
     logo: { fontSize: 13, fontWeight: '800', letterSpacing: 2, color: c.text },
     sub: { fontSize: 13, color: c.sub, marginTop: 6 },
-    fan: { marginTop: 12, height: 84 },
+    fan: { marginTop: 16, height: 84, marginBottom: 6 },
     fanCard: {
       position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
       borderRadius: 14, borderWidth: 1, borderColor: c.hairline, backgroundColor: c.surface,
@@ -1050,18 +1424,43 @@ const makeStyles = (c) =>
     meterWrap: { marginTop: 8 },
     meterSegs: { flexDirection: 'row', justifyContent: 'space-between', gap: 3 },
     meterLabel: { fontSize: 11, color: c.sub, marginTop: 4 },
+    monthHeader: {
+      flexDirection: 'row', alignItems: 'baseline', gap: 8,
+      paddingVertical: 10, paddingHorizontal: 2, backgroundColor: c.bg,
+    },
+    monthTitle: {
+      fontSize: 11, fontWeight: '700', letterSpacing: 1.2,
+      textTransform: 'uppercase', color: c.earn,
+    },
+    monthTotal: { fontSize: 11, color: c.sub },
+    monthChevron: { fontSize: 11, color: c.sub, marginLeft: 'auto' },
     pickerContainer: { flex: 1, backgroundColor: c.bg, padding: 20, paddingTop: 60 },
     search: {
       backgroundColor: c.surface, borderRadius: 10, padding: 12, marginVertical: 12,
       borderWidth: 1, borderColor: c.hairline, color: c.text, fontSize: 15,
     },
     cardRow: {
-      paddingVertical: 12, paddingHorizontal: 2, flexDirection: 'row',
-      alignItems: 'center', justifyContent: 'space-between',
-      borderLeftWidth: 3, borderLeftColor: 'transparent',
+      paddingVertical: 12, paddingHorizontal: 10, flexDirection: 'row',
+      alignItems: 'center', justifyContent: 'space-between', gap: 12,
+    },
+    cardRowOn: {
+      borderWidth: 1, borderColor: c.earn + '66', borderRadius: 12,
+      backgroundColor: c.surface, marginVertical: 4,
+      elevation: 3, shadowColor: '#000', shadowOpacity: 0.15,
+      shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     },
     cardName: { fontSize: 14, fontWeight: '600', color: c.text },
     cardSub: { fontSize: 11, color: c.sub, marginTop: 2 },
+    themeRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 14,
+      padding: 12, borderWidth: 1, borderColor: 'transparent', borderRadius: 12,
+      marginVertical: 4,
+    },
+    radio: {
+      width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: c.hairline,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    radioDot: { width: 10, height: 10, borderRadius: 5 },
     last4: {
       backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline, borderRadius: 8,
       padding: 8, marginTop: 8, fontSize: 13, color: c.text,
@@ -1076,6 +1475,8 @@ const makeStyles = (c) =>
     dockDot: { width: 4, height: 4, borderRadius: 2 },
     cardPageRow: { paddingVertical: 16 },
     portalRow: { paddingVertical: 14 },
+    portalTitleRow: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
+    portalDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8, flexShrink: 0 },
     portalApp: {
       flexDirection: 'row', alignItems: 'center', gap: 8,
       backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline,
@@ -1085,6 +1486,10 @@ const makeStyles = (c) =>
       flexDirection: 'row', alignItems: 'center', gap: 8,
       backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline,
       borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    },
+    debugBox: {
+      backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline,
+      borderRadius: 10, padding: 12, marginTop: 10, maxHeight: 220,
     },
     cardFace: {
       height: 168, borderRadius: 18, padding: 18, justifyContent: 'space-between',
@@ -1097,4 +1502,12 @@ const makeStyles = (c) =>
     cardFaceBottom: {},
     cardFaceName: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
     cardFaceLast4: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '600', marginTop: 4, letterSpacing: 2 },
+    earnPanel: {
+      backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline,
+      borderRadius: 14, padding: 12, marginBottom: 14, gap: 4,
+    },
+    earnRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      paddingVertical: 8, borderTopWidth: 1, borderTopColor: c.hairline,
+    },
   });

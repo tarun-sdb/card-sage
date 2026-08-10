@@ -51,13 +51,20 @@ function bestRow(rows) {
   return rows.length ? rows.reduce((a, b) => (b.ratePct > a.ratePct ? b : a)) : null;
 }
 
+// Cap-pool key. Most cards cap per category; a few (HDFC Millennia) share
+// ONE monthly cashback pool across all their rates. Rows carrying capGroup
+// draw from the same pool — spend on the 5% row depletes the 1% row's cap.
+export function spentKey(cardKey, r) {
+  return r.capGroup ? `${cardKey}:${r.capGroup}` : `${cardKey}:${r.category}`;
+}
+
 // Rank user's cards for an action+app, minus monthly cap already spent.
 export function recommend(userCards, action, app, spent = {}) {
   return userCards
     .map((c) => {
       const r = netRate(c, action, app);
       if (!r) return null;
-      const key = `${c.cardKey}:${r.category}`;
+      const key = spentKey(c.cardKey, r);
       const used = spent[key] || 0;
       const cap = r.monthlyCapRs;
       const remaining = cap != null ? Math.max(0, cap - used) : null;

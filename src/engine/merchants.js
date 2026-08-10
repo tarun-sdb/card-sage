@@ -10,6 +10,7 @@ const MAP = {
   AMAZON: "ONLINE_SHOPPING", "AMAZON PAY": "ONLINE_SHOPPING", AMZN: "ONLINE_SHOPPING",
   FLIPKART: "ONLINE_SHOPPING", MYNTRA: "ONLINE_SHOPPING", AJIO: "ONLINE_SHOPPING",
   "NYKAA": "ONLINE_SHOPPING", "MEESHO": "ONLINE_SHOPPING", "SNACKS": "ONLINE_SHOPPING",
+  "SMYTTEN": "ONLINE_SHOPPING", "GYFTR": "ONLINE_SHOPPING",
   // travel
   "MAKEMYTRIP": "TRAVEL", MMT: "TRAVEL", "MAKEMYTRIP.COM": "TRAVEL",
   GOIBIBO: "TRAVEL", IRCTC: "TRAVEL", "YATRA": "TRAVEL", "EASEMYTRIP": "TRAVEL",
@@ -24,6 +25,7 @@ const MAP = {
   AIRTEL: "UTILITY_BILLS", "AIRTEL DIGITAL TV": "UTILITY_BILLS", VI: "UTILITY_BILLS",
   "VODAFONE": "UTILITY_BILLS", "BSES": "UTILITY_BILLS", "TATA POWER": "UTILITY_BILLS",
   "ADANI ELECTRICITY": "UTILITY_BILLS", "MSEB": "UTILITY_BILLS", "CESC": "UTILITY_BILLS",
+  "RECHARGE": "UTILITY_BILLS", "MOBILE RECHARGE": "UTILITY_BILLS", "PREPAID RECHARGE": "UTILITY_BILLS",
   // grocery
   "BIGBASKET": "GROCERY", "DMART": "GROCERY", "BLINKIT": "GROCERY", "ZEECO": "GROCERY",
   "GROFERS": "GROCERY", "RELIANCE FRESH": "GROCERY", "MORE": "GROCERY",
@@ -35,6 +37,8 @@ const MAP = {
   "BAJAJ ALLIANZ": "INSURANCE", "ACKO": "INSURANCE", "POLICYBAZAAR": "INSURANCE",
   // rent
   "NOBROKER": "RENT", "HOUSING.COM": "RENT", "MAGICBRICKS": "RENT", "PAYTM RENT": "RENT",
+  // wallet loads
+  "PAYZAPP": "WALLET", "MOBIKWIK": "WALLET", "FREECHARGE": "WALLET",
   // education
   "BYJUS": "EDUCATION", "VEDANTU": "EDUCATION", "UPGRAD": "EDUCATION", "UNACADEMY": "EDUCATION",
 };
@@ -55,6 +59,27 @@ export function merchantCategory(merchant) {
   // "WWW AMAZON IN" -> ONLINE_SHOPPING.
   for (const key of Object.keys(MAP)) {
     if (new RegExp(`\\b${esc(key)}\\b`).test(n)) return MAP[key];
+  }
+  // Wallet merchants appear glued to suffixes ("PAYZAPPWALLET",
+  // "HDFCPAYZAPPWALLET") — plain substring wins for these keys only.
+  for (const key of ["PAYZAPP", "MOBIKWIK", "FREECHARGE"]) {
+    if (n.includes(key)) return MAP[key];
+  }
+  // Merchants ship txn/order refs glued on ("GYFTRSM12139725", "SWIGGY99123").
+  // Digits are never part of a merchant name — strip the trailing digit-run
+  // once and re-run the boundary pass. This resolves every ref-carrying
+  // merchant for keys already in MAP; nothing loses (no digit-bearing names).
+  const stripped = n.replace(/\d+.*$/, "");
+  if (stripped && stripped !== n) {
+    for (const key of Object.keys(MAP)) {
+      if (new RegExp(`\\b${esc(key)}\\b`).test(stripped)) return MAP[key];
+    }
+    // Prefix names ("GYFTRSM" starts with GYFTR — no boundary before S).
+    // Longest key first so short keys can't win ("GYFTR" beats "G").
+    const keys = Object.keys(MAP).sort((a, b) => b.length - a.length);
+    for (const key of keys) {
+      if (stripped.startsWith(key)) return MAP[key];
+    }
   }
   return null;
 }
