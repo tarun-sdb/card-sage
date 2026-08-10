@@ -57,7 +57,13 @@ export function recommend(userCards, action, app, spent = {}) {
       return { card: c, reward: r, used, cap, remaining };
     })
     .filter(Boolean)
-    .sort((a, b) => b.reward.netPct - a.reward.netPct);
+    // Value first; cashback beats reward points when rates tie.
+    .sort(
+      (a, b) =>
+        b.reward.netPct - a.reward.netPct ||
+        (a.reward.rewardType === 'CASHBACK' ? 0 : 1) -
+          (b.reward.rewardType === 'CASHBACK' ? 0 : 1)
+    );
 }
 
 // Skip-card actions (bills where fees beat rewards). Returns true when even the

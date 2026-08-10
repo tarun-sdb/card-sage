@@ -379,12 +379,7 @@ export default function App() {
       const excluded = rawPicks.find((p) => !earning(p));
       // When the used card is known, also show the best alternative.
       const best = matched ? recommend(wallet, action, app, spent).filter(earning)[0] : null;
-      // UPI spend with no owned UPI card: suggest one from the catalog.
-      const suggested =
-        !cat && !picks.length
-          ? recommend(cardsData.cards, action, app, spent).filter(earning)[0]
-          : null;
-      return { t, cat, upi: !cat, matched, top: picks[0], best, excluded, suggested };
+      return { t, cat, upi: !cat, matched, top: picks[0], best, excluded };
     });
   }, [txns, wallet, spent]);
 
@@ -502,17 +497,6 @@ export default function App() {
                   </Text>
                   <Chip color={c.warn} onPress={() => shareVerdict(item)}>
                     {shortName(item.excluded.card.name)} — needs ₹{item.excluded.reward.minTxnRs} min
-                  </Chip>
-                </View>
-              );
-            }
-            // UPI spend, no owned UPI card — suggest the best one to add.
-            if (item.suggested) {
-              return (
-                <View style={styles.metaRow}>
-                  <Text style={styles.meta}>UPI</Text>
-                  <Chip color={c.earn} onPress={() => shareVerdict(item)}>
-                    add {shortName(item.suggested.card.name)} — {item.suggested.reward.netPct}%
                   </Chip>
                 </View>
               );
@@ -719,9 +703,6 @@ const shareVerdict = async (item) => {
       `${item.excluded.card.name} needs ₹${item.excluded.reward.minTxnRs} min txn`
     );
   }
-  if (item.suggested) {
-    lines.push(`Add ${item.suggested.card.name} — ${item.suggested.reward.netPct}% cashback`);
-  }
   if (item.upi && !item.top) lines.push('Not a card spend — UPI person pay');
   try {
     await Share.share({ message: lines.join('\n') });
@@ -764,6 +745,7 @@ function PortalsPage({ c, styles, wallet, spent }) {
                 <View key={app.id} style={styles.portalApp}>
                   <Text style={[styles.cardSub, { flex: 1, color: c.text }]} numberOfLines={1}>
                     {app.label}
+                    {app.cardKey ? ' · ' + shortName((cardsData.cards.find((cd) => cd.cardKey === app.cardKey) || {}).name || '') : ''}
                   </Text>
                   <Chip color={app.feePct > 0 ? c.warn : c.earn}>
                     {app.feePct > 0 ? `${app.feePct}% fee` : '0% fee'}
@@ -778,7 +760,7 @@ function PortalsPage({ c, styles, wallet, spent }) {
       {sel ? (
         <PortalModal
           c={c} styles={styles} action={sel} wallet={wallet} spent={spent}
-          onClose={() => setSel(null)}
+          onClose={() => setSel(null)} openPicker={openPicker}
         />
       ) : null}
     </View>
@@ -787,10 +769,29 @@ function PortalsPage({ c, styles, wallet, spent }) {
 
 // Tap on a portal action → best card for the category + apps that open the
 // actual payment destination. Opens the app/browser via Linking.
-function PortalModal({ c, styles, action, wallet, spent, onClose }) {
+function PortalModal({ c, styles, action, wallet, spent, onClose, openPicker }) {
   const app = action.apps[0];
   const picks = recommend(wallet, action, app, spent);
   const best = picks.filter((p) => !(p.reward.minTxnRs && 500 < p.reward.minTxnRs))[0] || picks[0];
+  // Catalog suggestion: the top card anyone could use here. For wallet loads
+  // it's the co-brand pick per app; otherwise the best catalog earner.
+  const ownedKeys = new Set(wallet.map((w) => w.cardKey));
+  // Explicit per-wallet pick (e.g. PayZapp → HDFC Millennia) wins; otherwise
+  // the best catalog earner for the action.
+  let suggested = null;
+  if (app.cardKey) {
+    const card = cardsData.cards.find((cd) => cd.cardKey === app.cardKey);
+    if (card) {
+      const r = rewardFor(card, action, app);
+      if (r) suggested = { card, reward: { ...r, netPct: r.ratePct - (app.feePct || 0) } };
+    }
+  }
+  if (!suggested) {
+    const catalog = recommend(cardsData.cards, action, app, spent).filter(
+      (p) => !ownedKeys.has(p.card.cardKey)
+    );
+    suggested = catalog[0] || null;
+  }
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <View style={styles.pickerContainer}>
@@ -817,6 +818,21 @@ function PortalModal({ c, styles, action, wallet, spent, onClose }) {
           ) : (
             <Text style={styles.status}>No wallet card earns here — add one in Cards.</Text>
           )}
+          {suggested && suggested.card.cardKey !== (best && best.card.cardKey) ? (
+            <Pressable
+              style={[styles.portalApp, { marginTop: 8, backgroundColor: c.surface }]}
+              onPress={openPicker}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardName}>+ Add {shortName(suggested.card.name)}</Text>
+                <Text style={styles.cardSub}>
+                  {suggested.reward.netPct}% net cashback
+                  {suggested.reward.monthlyCapRs != null ? ` · cap ₹${suggested.reward.monthlyCapRs.toLocaleString('en-IN')}` : ''}
+                </Text>
+              </View>
+              <Chip color={c.warn}>{suggested.reward.netPct}%</Chip>
+            </Pressable>
+          ) : null}
         </View>
 
         <Text style={[styles.potentialLabel, { marginTop: 18 }]}>WHERE TO PAY</Text>

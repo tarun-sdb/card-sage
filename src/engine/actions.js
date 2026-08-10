@@ -20,7 +20,7 @@ export const ACTIONS = [
     category: "UTILITY_BILLS",
     icon: "📱",
     apps: [
-      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/recharge" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/recharge", cardKey: "sbi-phonepe-select-black" },
       { id: "amazon-pay", label: "Amazon Pay", feePct: 0, url: "https://www.amazon.in/mobile-recharge" },
       { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com/recharge" },
       { id: "jio", label: "Jio app", feePct: 0, url: "https://www.jio.com/selfcare/recharge" },
@@ -32,7 +32,7 @@ export const ACTIONS = [
     category: "UTILITY_BILLS",
     icon: "💡",
     apps: [
-      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/electricity" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/electricity", cardKey: "sbi-phonepe-select-black" },
       { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com/electricity-bill-payment" },
       { id: "amazon-pay", label: "Amazon Pay", feePct: 0, url: "https://www.amazon.in/pay/bbps" },
     ],
@@ -43,7 +43,7 @@ export const ACTIONS = [
     category: "UTILITY_BILLS",
     icon: "📺",
     apps: [
-      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/dth" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/dth", cardKey: "sbi-phonepe-select-black" },
       { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com/dth-recharge" },
     ],
   },
@@ -54,7 +54,7 @@ export const ACTIONS = [
     icon: "🔥",
     apps: [
       { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com/gas-cylinder-booking" },
-      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/lpg" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/lpg", cardKey: "sbi-phonepe-select-black" },
     ],
   },
   {
@@ -64,7 +64,7 @@ export const ACTIONS = [
     icon: "🛡️",
     apps: [
       { id: "policybazaar", label: "Policybazaar", feePct: 0, url: "https://www.policybazaar.com" },
-      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/insurance" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/insurance", cardKey: "sbi-phonepe-select-black" },
     ],
   },
   {
@@ -153,7 +153,7 @@ export const ACTIONS = [
     icon: "✈️",
     apps: [
       { id: "mmt", label: "MakeMyTrip", feePct: 0, url: "https://www.makemytrip.com" },
-      { id: "phonepe", label: "PhonePe Travel", feePct: 0, url: "https://www.phonepe.com/travel" },
+      { id: "phonepe", label: "PhonePe Travel", feePct: 0, url: "https://www.phonepe.com/travel", cardKey: "sbi-phonepe-select-black" },
       { id: "goibibo", label: "Goibibo", feePct: 0, url: "https://www.goibibo.com" },
     ],
   },
@@ -163,7 +163,7 @@ export const ACTIONS = [
     category: "EDUCATION",
     icon: "🎓",
     apps: [
-      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com", cardKey: "sbi-phonepe-select-black" },
       { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com" },
       { id: "amazon-pay", label: "Amazon Pay", feePct: 0, url: "https://www.amazon.in/pay" },
     ],
@@ -177,6 +177,19 @@ export const ACTIONS = [
     apps: [
       { id: "upi", label: "UPI / bank transfer", feePct: 0, url: null, recommend: "skip-card" },
       { id: "paytm", label: "Paytm Rent", feePct: 1, url: "https://paytm.com/rent-payment", warn: "1% fee" },
+    ],
+  },
+  {
+    id: "wallet-load",
+    label: "Wallet load",
+    category: null, // special: no reward category, card pick is per-wallet below
+    icon: "💰",
+    note: "Wallet loads rarely earn. Co-brand cards pay on their own wallet — pick per app.",
+    apps: [
+      { id: "payzapp", label: "PayZapp", feePct: 0, url: "https://www.payzapp.in", cardKey: "hdfc-millennia" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com", cardKey: "sbi-phonepe-select-black" },
+      { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com", cardKey: "sbi-paytm-select" },
+      { id: "amazon-pay", label: "Amazon Pay", feePct: 0, url: "https://www.amazon.in/pay", cardKey: "icici-amazon-pay" },
     ],
   },
 ];
