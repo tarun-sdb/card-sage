@@ -2,8 +2,10 @@ import { StatusBar } from 'expo-status-bar';
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated, Easing, FlatList, Linking, Modal, PanResponder, PermissionsAndroid, Platform,
-  Pressable, RefreshControl, SectionList, Share, StyleSheet, Text, TextInput, useColorScheme, View,
+  Pressable, RefreshControl, SectionList, Share, StyleSheet, Text, TextInput, useColorScheme,
+  Vibration, View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import cardsData from '../../src/data/cards.json';
@@ -241,38 +243,83 @@ function Btn({ title, color, onPress, primary, small }) {
   );
 }
 
-// Swipe-left to reveal Remove. Snap open/closed, Remove sits on the right.
-const SWIPE_REVEAL = 96;
+// Swipe-left to reveal delete. Zone 1: near-black well, trash icon fades in
+// with drag. Zone 2 (overscroll past SWIPE_KILL): well turns danger-red,
+// icon whitens + scales, release = delete. Colors need the JS driver (only
+// this card, few rows, negligible cost).
+const SWIPE_REVEAL = 96;   // snap-open position (zone 1)
+const SWIPE_KILL = 140;    // release past here = delete (zone 2)
+const SWIPE_HARD = 160;    // drag ceiling
 function SwipeCard({ c, styles, children, onRemove }) {
   const x = useRef(new Animated.Value(0)).current;
   const openRef = useRef(false);
+  const redRef = useRef(false); // zone-2 vibration: once per entry
+  const pos = (g) =>
+    Math.max(-SWIPE_HARD, Math.min(0, g.dx + (openRef.current ? -SWIPE_REVEAL : 0)));
   const pan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
         Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
-      onPanResponderMove: (_, g) =>
-        x.setValue(Math.min(0, g.dx + (openRef.current ? -SWIPE_REVEAL : 0))),
+      onPanResponderMove: (_, g) => {
+        const p = pos(g);
+        x.setValue(p);
+        if (p < -SWIPE_KILL && !redRef.current) {
+          redRef.current = true;
+          Vibration.vibrate(10);
+        } else if (p >= -SWIPE_KILL) redRef.current = false;
+      },
       onPanResponderRelease: (_, g) => {
+        const p = pos(g);
+        if (openRef.current && p <= -SWIPE_KILL) {
+          openRef.current = false;
+          Animated.spring(x, { toValue: 0, speed: 18, bounciness: 4, useNativeDriver: false }).start();
+          onRemove();
+          return;
+        }
         const shouldOpen = openRef.current ? g.dx < 40 : g.dx < -50 || g.vx < -0.3;
         openRef.current = shouldOpen;
         Animated.spring(x, {
           toValue: shouldOpen ? -SWIPE_REVEAL : 0,
-          speed: 18, bounciness: 4, useNativeDriver: true,
+          speed: 18, bounciness: 4, useNativeDriver: false,
         }).start();
       },
       onPanResponderTerminate: () =>
-        Animated.spring(x, { toValue: 0, speed: 18, bounciness: 4, useNativeDriver: true }).start(),
+        Animated.spring(x, { toValue: 0, speed: 18, bounciness: 4, useNativeDriver: false }).start(),
     })
   ).current;
+  const wellBg = x.interpolate({
+    inputRange: [0, -SWIPE_REVEAL, -SWIPE_KILL],
+    outputRange: ['rgba(14,14,18,0)', '#0E0E12', c.danger],
+  });
+  const iconOpacity = x.interpolate({
+    inputRange: [0, -32, -SWIPE_REVEAL],
+    outputRange: [0, 0, 1], // slow reveal: nothing until 1/3 of the swipe
+  });
+  const iconScale = x.interpolate({
+    inputRange: [-SWIPE_REVEAL, -SWIPE_KILL],
+    outputRange: [1, 1.15],
+  });
+  const iconColor = x.interpolate({
+    inputRange: [-SWIPE_REVEAL, -SWIPE_KILL],
+    outputRange: ['#FAFAFA', '#FFFFFF'],
+  });
   return (
     <View>
       <View
         style={{
-          position: 'absolute', right: 0, top: 0, bottom: 0,
-          justifyContent: 'center', paddingRight: 4,
+          position: 'absolute', right: 0, top: 0, bottom: 0, width: SWIPE_HARD,
+          backgroundColor: wellBg,
         }}
       >
-        <Btn title="Remove" color={c.danger} small onPress={onRemove} />
+        <Pressable
+          style={{ flex: 1, justifyContent: 'center', alignItems: 'flex-end', paddingRight: 32 }}
+          onPress={onRemove}
+          accessibilityLabel="Delete card"
+        >
+          <Animated.View style={{ opacity: iconOpacity, transform: [{ scale: iconScale }] }}>
+            <Ionicons name="trash-bin" size={26} color={iconColor} />
+          </Animated.View>
+        </Pressable>
       </View>
       <Animated.View style={{ transform: [{ translateX: x }] }} {...pan.panHandlers}>
         {children}
