@@ -319,10 +319,20 @@ function SwipeCard({ c, styles, children, onRemove }) {
       <Animated.View
         style={{
           position: 'absolute', right: 0, top: 16, height: 168, width: SWIPE_HARD,
-          backgroundColor: wellBg, // square sheet — card's corners carve the only curves
+          borderTopRightRadius: 18, borderBottomRightRadius: 18, backgroundColor: wellBg,
         }}
-      >
-        <Pressable
+      />
+      {/* Corner wraps: circles centered on the card's corner arcs (snap-open)
+          so the red protrudes into the corner voids and hugs the card. */}
+      <Animated.View
+        style={{ position: 'absolute', right: SWIPE_REVEAL, top: 16, width: 36, height: 36,
+          borderRadius: 18, backgroundColor: wellBg }}
+      />
+      <Animated.View
+        style={{ position: 'absolute', right: SWIPE_REVEAL, bottom: 16, width: 36, height: 36,
+          borderRadius: 18, backgroundColor: wellBg }}
+      />
+      <Pressable
           style={{ flex: 1, justifyContent: 'center', alignItems: 'flex-end', paddingRight: 32 }}
           onPress={onRemove}
           accessibilityLabel="Delete card"
@@ -331,7 +341,6 @@ function SwipeCard({ c, styles, children, onRemove }) {
             <TrashIcon />
           </Animated.View>
         </Pressable>
-      </Animated.View>
       <Animated.View style={{ transform: [{ translateX: x }] }} {...pan.panHandlers}>
         {children}
       </Animated.View>
