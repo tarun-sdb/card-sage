@@ -5,7 +5,6 @@ import {
   Pressable, RefreshControl, SectionList, Share, StyleSheet, Text, TextInput, useColorScheme,
   Vibration, View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import cardsData from '../../src/data/cards.json';
@@ -243,6 +242,20 @@ function Btn({ title, color, onPress, primary, small }) {
   );
 }
 
+// Hand-drawn trash: 3 Views, white — no font, no async load, renders always.
+const TRASH = '#FAFAFA';
+function TrashIcon({ size = 26 }) {
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center' }}>
+      <View style={{ width: size * 0.32, height: size * 0.16, borderRadius: 1, backgroundColor: TRASH }} />
+      <View style={{ width: size * 0.68, height: size * 0.1, borderRadius: 1, backgroundColor: TRASH, marginTop: -size * 0.03 }} />
+      <View style={{ width: size * 0.62, height: size * 0.56, borderRadius: 3, backgroundColor: TRASH, marginTop: size * 0.03 }}>
+        <View style={{ width: size * 0.08, height: '100%', alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.25)' }} />
+      </View>
+    </View>
+  );
+}
+
 // Swipe-left to reveal delete. Zone 1: red well, trash icon fades in
 // with drag. Zone 2 (overscroll past SWIPE_KILL): well deepens to dark red,
 // icon whitens + scales, release = delete. Colors need the JS driver (only
@@ -306,7 +319,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
       <Animated.View
         style={{
           position: 'absolute', right: 0, top: 16, height: 168, width: SWIPE_HARD,
-          backgroundColor: wellBg,
+          borderRadius: 18, backgroundColor: wellBg,
         }}
       >
         <Pressable
@@ -315,7 +328,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
           accessibilityLabel="Delete card"
         >
           <Animated.View style={{ opacity: iconOpacity, transform: [{ scale: iconScale }] }}>
-            <Ionicons name="trash-bin" size={26} color="#FAFAFA" />
+            <TrashIcon />
           </Animated.View>
         </Pressable>
       </Animated.View>
