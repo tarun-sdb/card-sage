@@ -243,8 +243,8 @@ function Btn({ title, color, onPress, primary, small }) {
   );
 }
 
-// Swipe-left to reveal delete. Zone 1: near-black well, trash icon fades in
-// with drag. Zone 2 (overscroll past SWIPE_KILL): well turns danger-red,
+// Swipe-left to reveal delete. Zone 1: red well, trash icon fades in
+// with drag. Zone 2 (overscroll past SWIPE_KILL): well deepens to dark red,
 // icon whitens + scales, release = delete. Colors need the JS driver (only
 // this card, few rows, negligible cost).
 const SWIPE_REVEAL = 96;   // snap-open position (zone 1)
@@ -289,7 +289,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
   ).current;
   const wellBg = x.interpolate({
     inputRange: [0, -SWIPE_REVEAL, -SWIPE_KILL],
-    outputRange: ['rgba(14,14,18,0)', '#0E0E12', c.danger],
+    outputRange: ['rgba(220,38,38,0)', c.danger, '#991B1B'],
   });
   const iconOpacity = x.interpolate({
     inputRange: [0, -32, -SWIPE_REVEAL],
@@ -299,10 +299,8 @@ function SwipeCard({ c, styles, children, onRemove }) {
     inputRange: [-SWIPE_REVEAL, -SWIPE_KILL],
     outputRange: [1, 1.15],
   });
-  const iconColor = x.interpolate({
-    inputRange: [-SWIPE_REVEAL, -SWIPE_KILL],
-    outputRange: ['#FAFAFA', '#FFFFFF'],
-  });
+  // ponytail: static near-white works on both the near-black well and the
+  // red zone — skips Animated color (plain Text can't take Animated values).
   return (
     <View>
       <View
@@ -317,7 +315,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
           accessibilityLabel="Delete card"
         >
           <Animated.View style={{ opacity: iconOpacity, transform: [{ scale: iconScale }] }}>
-            <Ionicons name="trash-bin" size={26} color={iconColor} />
+            <Ionicons name="trash-bin" size={26} color="#FAFAFA" />
           </Animated.View>
         </Pressable>
       </View>
