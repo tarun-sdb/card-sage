@@ -244,11 +244,34 @@ function Btn({ title, color, onPress, primary, small }) {
 
 // Hand-drawn trash: 3 Views, white — no font, no async load, renders always.
 const TRASH = '#FAFAFA';
-function TrashIcon({ size = 26 }) {
+// ponytail: STATIC red well, no Animated props on it. On-device testing
+// proved JS-driver Animated props on the well (backgroundColor interp)
+// make its children (the trash icon) vanish in release. Static red, face
+// covers it at rest, slides off to reveal — children render fine.
+function TrashIcon({ size = 26, x = null }) {
+  const lidLift = x
+    ? x.interpolate({
+        inputRange: [0, -SWIPE_REVEAL, -SWIPE_KILL],
+        outputRange: [0, -7, -12], // lid pops up as the can opens
+      })
+    : 0;
+  const lidTilt = x
+    ? x.interpolate({
+        inputRange: [0, -SWIPE_REVEAL, -SWIPE_KILL],
+        outputRange: ['0deg', '-14deg', '-32deg'],
+      })
+    : '0deg';
   return (
     <View style={{ width: size, height: size, alignItems: 'center' }}>
+      {/* handle: stays put, lid lifts away from it = the can opens */}
       <View style={{ width: size * 0.32, height: size * 0.16, borderRadius: 1, backgroundColor: TRASH }} />
-      <View style={{ width: size * 0.68, height: size * 0.1, borderRadius: 1, backgroundColor: TRASH, marginTop: -size * 0.03 }} />
+      <Animated.View
+        style={{
+          width: size * 0.68, height: size * 0.1, borderRadius: 1,
+          backgroundColor: TRASH, marginTop: -size * 0.03,
+          transform: [{ translateY: lidLift }, { rotate: lidTilt }],
+        }}
+      />
       <View style={{ width: size * 0.62, height: size * 0.56, borderRadius: 3, backgroundColor: TRASH, marginTop: size * 0.03 }}>
         <View style={{ width: size * 0.08, height: '100%', alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.25)' }} />
       </View>
@@ -257,9 +280,9 @@ function TrashIcon({ size = 26 }) {
 }
 
 // Swipe-left to reveal delete. Zone 1: red well, trash icon fades in
-// with drag. Zone 2 (overscroll past SWIPE_KILL): well deepens to dark red,
-// icon whitens + scales, release = delete. Colors need the JS driver (only
-// this card, few rows, negligible cost).
+// with drag (lid pops open). Zone 2 (overscroll past SWIPE_KILL): can
+// scales up, release = delete. Colors need the JS driver (only this card,
+// few rows, negligible cost).
 const SWIPE_REVEAL = 96;   // snap-open position (zone 1)
 const SWIPE_KILL = 140;    // release past here = delete (zone 2)
 const SWIPE_HARD = 160;    // drag ceiling
@@ -285,7 +308,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
         const p = pos(g);
         if (openRef.current && p <= -SWIPE_KILL) {
           openRef.current = false;
-          Animated.spring(x, { toValue: 0, speed: 18, bounciness: 4, useNativeDriver: false }).start();
+          Animated.spring(x, { toValue: 0, speed: 18, bounciness: 4, useNativeDriver: true }).start();
           onRemove();
           return;
         }
@@ -293,36 +316,25 @@ function SwipeCard({ c, styles, children, onRemove }) {
         openRef.current = shouldOpen;
         Animated.spring(x, {
           toValue: shouldOpen ? -SWIPE_REVEAL : 0,
-          speed: 18, bounciness: 4, useNativeDriver: false,
+          speed: 18, bounciness: 4, useNativeDriver: true,
         }).start();
       },
       onPanResponderTerminate: () =>
-        Animated.spring(x, { toValue: 0, speed: 18, bounciness: 4, useNativeDriver: false }).start(),
+        Animated.spring(x, { toValue: 0, speed: 18, bounciness: 4, useNativeDriver: true }).start(),
     })
   ).current;
-  const wellBg = x.interpolate({
-    inputRange: [0, -SWIPE_REVEAL],
-    outputRange: ['rgba(180,90,90,0)', c.danger], // desat+transparent → saturated+opaque
-  });
-  const iconOpacity = x.interpolate({
-    inputRange: [0, -32, -SWIPE_REVEAL],
-    outputRange: [0, 0, 1], // slow reveal: nothing until 1/3 of the swipe
-  });
-  const iconScale = x.interpolate({
-    inputRange: [-SWIPE_REVEAL, -SWIPE_KILL],
-    outputRange: [1, 1.15],
-  });
-  // ponytail: static near-white works on both the near-black well and the
-  // red zone — skips Animated color (plain Text can't take Animated values).
   return (
     <View>
-      {/* Reveal: the card's exact silhouette (full width, 168, radius 18).
+      {/* Reveal: the card's exact silhouette (face-bounds 168, radius 18).
           The face slides over its own red twin — corner wrap is automatic,
-          the visible edge traces the face's corners at every position. */}
-      <Animated.View
+          the visible edge traces the face's corners at every position.
+          Static everything: release-bug proves Animated.View + JS opacity
+          interp renders as a transparent layer — the can vanished, and the
+          red fade never actually ran on device. Static = the can shows. */}
+      <View
         style={{
-          position: 'absolute', left: 0, right: 0, top: 16, height: 168,
-          borderRadius: 18, backgroundColor: wellBg,
+          position: 'absolute', left: 4, right: 4, top: 16, height: 168,
+          borderRadius: 18, backgroundColor: c.danger,
         }}
       >
         <Pressable
@@ -330,11 +342,11 @@ function SwipeCard({ c, styles, children, onRemove }) {
           onPress={onRemove}
           accessibilityLabel="Delete card"
         >
-          <Animated.View style={{ opacity: iconOpacity, transform: [{ scale: iconScale }] }}>
-            <TrashIcon />
-          </Animated.View>
+          <View>
+            <TrashIcon x={x} />
+          </View>
         </Pressable>
-      </Animated.View>
+      </View>
       <Animated.View style={{ transform: [{ translateX: x }] }} {...pan.panHandlers}>
         {children}
       </Animated.View>
@@ -1164,7 +1176,7 @@ export default function App() {
             );
           })}
           <View style={{ marginTop: 24 }}>
-            <Btn title="Continue" color={c.earn} onPress={() => setThemeOpen(false)} />
+            <Btn title="Continue" color={c.earn} onPress={() => { setThemeOpen(false); AsyncStorage.setItem(THEME_KEY, themePref || 'system'); }} />
           </View>
         </View>
       </Modal>
