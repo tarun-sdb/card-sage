@@ -399,6 +399,7 @@ export default function App() {
   const [themePref, setThemePref] = useState(null); // null = loading, else system|dark|light
   const [themeOpen, setThemeOpen] = useState(false);
   const [collapsed, setCollapsed] = useState({}); // month title → rows hidden
+  const [catFilter, setCatFilter] = useState('all'); // ledger category chip
   const [busy, setBusy] = useState(false); // SMS scan in flight (pull-to-refresh spinner)
 
   // First run: load saved theme, then open the onboarding picker if it's new.
@@ -679,9 +680,15 @@ export default function App() {
 
   // Ledger grouped by month; header = month + scanned total, tap collapses.
   // Rows keep their global index so expand/collapse doesn't reshape keys.
+  const cats = useMemo(() => {
+    const s = new Set(rows.map((r) => (r.upi ? 'upi' : r.cat || 'other')));
+    return ['all', ...[...s].sort()];
+  }, [rows]);
   const sections = useMemo(() => {
     const byMonth = new Map();
     rows.forEach((r, i) => {
+      const k = r.upi ? 'upi' : r.cat || 'other';
+      if (catFilter !== 'all' && k !== catFilter) return;
       const d = new Date(r.t.date);
       const title = isNaN(d.getTime())
         ? 'Unknown'
@@ -694,7 +701,7 @@ export default function App() {
       total: data.reduce((s, r) => s + r.t.amount, 0),
       data: collapsed[title] ? [] : data,
     }));
-  }, [rows, collapsed]);
+  }, [rows, collapsed, catFilter]);
 
   // Header: potential cashback from card-matched rows only, bounded by
   // remaining cap. Labeled "potential" — SMS batch is not a statement.
@@ -802,6 +809,20 @@ export default function App() {
       </View>
 
       {status ? <Text style={styles.status}>{status}</Text> : null}
+
+      {cats.length > 1 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8, width: '100%' }}>
+          {cats.map((k) => (
+            <Chip
+              key={k}
+              color={catFilter === k ? c.earn : c.muted}
+              onPress={() => setCatFilter(k)}
+            >
+              {k === 'all' ? 'All' : humanize(k)}
+            </Chip>
+          ))}
+        </View>
+      ) : null}
 
       <SectionList
         sections={sections}
