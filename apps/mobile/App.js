@@ -1147,9 +1147,10 @@ const issuerColors = {
   ICICI: ['#B91C1C', '#EF4444'], AXIS: ['#7F1D1D', '#DC2626'],
   DCB: ['#312E81', '#6366F1'], AMEX: ['#065F46', '#10B981'],
   RBL: ['#1F2937', '#4B5563'], IDFC: ['#1E40AF', '#2563EB'],
+  SLICE: ['#C4134B', '#F53DC4'],
 };
 const issuerGradient = (c, issuer) =>
-  issuerColors[String(issuer).toUpperCase()] || [c.surface, c.earn + '22'];
+  issuerColors[String(issuer).toUpperCase()] || [c.surface, c.surface];
 const humanize = (s) =>
   (s || '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 const cardType = (name) => (/debit/i.test(name) ? 'DEBIT' : 'CREDIT');
