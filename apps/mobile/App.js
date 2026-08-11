@@ -302,7 +302,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
   ).current;
   const wellBg = x.interpolate({
     inputRange: [0, -SWIPE_REVEAL],
-    outputRange: ['rgba(220,38,38,0)', c.danger], // fades to red, stays — no darkening
+    outputRange: ['rgba(180,90,90,0)', c.danger], // desat+transparent → saturated+opaque
   });
   const iconOpacity = x.interpolate({
     inputRange: [0, -32, -SWIPE_REVEAL],
@@ -319,7 +319,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
       <Animated.View
         style={{
           position: 'absolute', right: 0, top: 16, height: 168, width: SWIPE_HARD,
-          borderTopRightRadius: 18, borderBottomRightRadius: 18, backgroundColor: wellBg,
+          borderRadius: 18, backgroundColor: wellBg,
         }}
       >
         <Pressable
