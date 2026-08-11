@@ -131,28 +131,67 @@ function CapMeter({ used, cap, c, label }) {
   const { styles } = useStyles();
   const a = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.timing(a, { toValue: 1, duration: 400, delay: 200, useNativeDriver: true }).start();
+    // Fill climbs 0 → pct on mount; per-row meters rise to different
+    // amounts, which reads as cashback accumulating transaction by txn.
+    Animated.timing(a, {
+      toValue: 1, duration: 700, delay: 200, easing: Easing.out(Easing.cubic),
+      useNativeDriver: false, // width + color can't use the native driver
+    }).start();
   }, []);
-  const pct = used / cap;
-  const color = pct >= 1 ? c.danger : pct >= 0.7 ? c.warn : c.earn;
-  const segs = 12;
-  const filled = Math.min(segs, Math.max(0, Math.ceil(pct * segs)));
+  const pct = Math.min(1, used / cap);
+  // Ramp red → amber → green as cashback accumulates; the bar literally
+  // gets greener the fuller it is. Interpolate from red up to THIS meter's
+  // level color — each row animates red → its own shade.
+  const lerp = (a, b, t) => a.map((x, i) => Math.round(x + (b[i] - x) * t));
+  const ramp = (p) => {
+    const red = [220, 38, 38], amber = [245, 158, 11], green = [22, 163, 74];
+    const rgb = p <= 0.7 ? lerp(red, amber, p / 0.7) : lerp(amber, green, (p - 0.7) / 0.3);
+    return '#' + rgb.map((x) => x.toString(16).padStart(2, '0')).join('');
+  };
+  const color = a.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#DC2626', ramp(pct)],
+  });
+  const full = pct >= 1;
+  // Overcharge: when the pool is spent, a white droplet drips off the brim.
+  const drop = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!full) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(drop, { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.delay(400),
+        Animated.timing(drop, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [full]);
   return (
     <View style={styles.meterWrap}>
-      <Animated.View style={[styles.meterSegs, { opacity: a }]}>
-        {Array.from({ length: segs }, (_, i) => (
-          <View
-            key={i}
-            style={{
-              flex: 1, height: 6, borderRadius: 2,
-              backgroundColor: i < filled ? color : c.meterTrack,
-            }}
-          />
-        ))}
-      </Animated.View>
-      <Text style={styles.meterLabel}>
-        {label ?? `₹${Math.round(used).toLocaleString('en-IN')}/${cap.toLocaleString('en-IN')} used`}
-      </Text>
+      <View style={[styles.meterTrack, { backgroundColor: c.meterTrack }]}>
+        <Animated.View
+          style={[
+            styles.meterFill,
+            { backgroundColor: color },
+            { width: a.interpolate({ inputRange: [0, 1], outputRange: ['0%', `${pct * 100}%`] }) },
+          ]}
+        />
+      </View>
+      {full ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.meterDrop,
+            {
+              left: `${Math.max(4, pct * 100 - 2)}%`,
+              opacity: drop,
+              transform: [{ translateY: drop.interpolate({ inputRange: [0, 1], outputRange: [0, 14] }) }],
+            },
+          ]}
+        />
+      ) : null}
+      {label ? <Text style={styles.meterLabel}>{label}</Text> : null}
     </View>
   );
 }
@@ -717,9 +756,6 @@ export default function App() {
         ) : null}
       </View>
 
-      <View style={styles.actions}>
-        <Btn title="Read recent SMS" color={c.earn} primary onPress={readSms} />
-      </View>
       {status ? <Text style={styles.status}>{status}</Text> : null}
 
       <SectionList
@@ -1422,7 +1458,13 @@ const makeStyles = (c) =>
     chipText: { fontSize: 12, fontWeight: '600' },
     hairline: { height: 1, backgroundColor: c.hairline },
     meterWrap: { marginTop: 8 },
-    meterSegs: { flexDirection: 'row', justifyContent: 'space-between', gap: 3 },
+    meterTrack: { height: 8, borderRadius: 4, overflow: 'hidden', width: '100%' },
+    meterFill: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 4 },
+    meterDrop: {
+      position: 'absolute', top: 10, width: 8, height: 10, borderRadius: 4,
+      backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOpacity: 0.3,
+      shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2,
+    },
     meterLabel: { fontSize: 11, color: c.sub, marginTop: 4 },
     monthHeader: {
       flexDirection: 'row', alignItems: 'baseline', gap: 8,
