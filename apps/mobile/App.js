@@ -319,7 +319,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
       <Animated.View
         style={{
           position: 'absolute', right: 0, top: 16, height: 168, width: SWIPE_HARD,
-          borderRadius: 18, backgroundColor: wellBg,
+          backgroundColor: wellBg, // square sheet — card's corners carve the only curves
         }}
       >
         <Pressable
