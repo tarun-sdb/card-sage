@@ -305,7 +305,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
     <View>
       <Animated.View
         style={{
-          position: 'absolute', right: 0, top: 0, bottom: 0, width: SWIPE_HARD,
+          position: 'absolute', right: 0, top: 16, height: 168, width: SWIPE_HARD,
           backgroundColor: wellBg,
         }}
       >
