@@ -303,7 +303,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
   // red zone — skips Animated color (plain Text can't take Animated values).
   return (
     <View>
-      <View
+      <Animated.View
         style={{
           position: 'absolute', right: 0, top: 0, bottom: 0, width: SWIPE_HARD,
           backgroundColor: wellBg,
@@ -318,7 +318,7 @@ function SwipeCard({ c, styles, children, onRemove }) {
             <Ionicons name="trash-bin" size={26} color="#FAFAFA" />
           </Animated.View>
         </Pressable>
-      </View>
+      </Animated.View>
       <Animated.View style={{ transform: [{ translateX: x }] }} {...pan.panHandlers}>
         {children}
       </Animated.View>
