@@ -3,7 +3,7 @@
     "name": "Card Sage",
     "slug": "card-sage",
     "version": "1.0.0",
-    "plugins": ["expo-background-fetch", "./plugins/withShareIntent"],
+    "plugins": ["./plugins/withShareIntent"],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

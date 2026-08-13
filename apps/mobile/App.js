@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, Easing, FlatList, Linking, Modal, PanResponder, PermissionsAndroid, Platform,
+  Animated, AppState, Easing, FlatList, Linking, Modal, PanResponder, PermissionsAndroid, Platform,
   Pressable, RefreshControl, SectionList, Share, StyleSheet, Text, TextInput, useColorScheme,
   Vibration, View,
 } from 'react-native';
@@ -13,7 +13,7 @@ import { recommend, rewardFor, spentKey } from '../../src/engine/recommend';
 import { parseSms } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
-import { loadTxns, registerNightlyScan } from './modules/nightly-scan';
+import { loadTxns } from './modules/nightly-scan';
 import ShareReceiver from './modules/share-receiver';
 
 // Unmapped merchants (UPI person payments etc.) route through the UPI action.
@@ -376,8 +376,7 @@ export default function App() {
   }, [tab]);
 
   useEffect(() => {
-    registerNightlyScan();
-    // Nightly scans persist txns; load whatever the background task collected.
+    // Restore whatever the last scan persisted.
     loadTxns().then((saved) => {
       if (saved.length) {
         setTxns(saved);
@@ -517,15 +516,22 @@ export default function App() {
     }
   };
 
-  // Auto-scan once per session once a wallet exists: fresh SMS data on open,
-  // no button press. loadTxns above shows last night's scan instantly; this
-  // refreshes it. Permission is cached after first grant.
+  // Fresh SMS data on every foreground: cold start + resume from background.
+  // AppState fires 'active' on launch, but wallet loads async — so mount
+  // scans once wallet exists, and 'active' re-scans on every resume.
   const autoScanned = useRef(false);
   useEffect(() => {
     if (wallet.length && !autoScanned.current) {
       autoScanned.current = true;
       readSms();
     }
+  }, [wallet.length]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active' && wallet.length && autoScanned.current) readSms();
+    });
+    return () => sub.remove();
   }, [wallet.length]);
 
   // Share-sheet intake: the app was opened via Android's share sheet with a
