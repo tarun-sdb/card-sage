@@ -74,37 +74,12 @@ const useStyles = () => {
 
 // --- Craft components -----------------------------------------------------
 
-// Wallet fan: two rotated cards peeking behind the front card. Front holds
-// the real content (potential summary / empty state).
+// Wallet fan: the front card holds the real content (potential summary /
+// empty state). Entrance animation cut (ponytail audit).
 function Fan({ c, front }) {
   const { styles } = useStyles();
-  const rise = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(rise, {
-      toValue: 1, duration: 500, delay: 100, easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, []);
-  const anim = {
-    opacity: rise,
-    translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }),
-  };
   return (
     <View style={styles.fan}>
-      <Animated.View
-        style={{
-          opacity: anim.opacity,
-          transform: [{ translateY: anim.translateY }, { rotate: '-5deg' }, { translateX: -10 }],
-          ...styles.fanCard,
-        }}
-      />
-      <Animated.View
-        style={{
-          opacity: anim.opacity,
-          transform: [{ translateY: anim.translateY }, { rotate: '6deg' }, { translateX: 10 }],
-          ...styles.fanCard,
-        }}
-      />
       <LinearGradient
         colors={[c.surface, c.earn + '14']}
         style={[styles.fanCard, styles.fanFront]}
@@ -130,68 +105,22 @@ function CountUp({ value, style }) {
 
 function CapMeter({ used, cap, c, label }) {
   const { styles } = useStyles();
-  const a = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    // Fill climbs 0 → pct on mount; per-row meters rise to different
-    // amounts, which reads as cashback accumulating transaction by txn.
-    Animated.timing(a, {
-      toValue: 1, duration: 700, delay: 200, easing: Easing.out(Easing.cubic),
-      useNativeDriver: false, // width + color can't use the native driver
-    }).start();
-  }, []);
   const pct = Math.min(1, used / cap);
-  // Ramp red → amber → green as cashback accumulates; the bar literally
-  // gets greener the fuller it is. Interpolate from red up to THIS meter's
-  // level color — each row animates red → its own shade.
+  // Ramp red → amber → green as the pool fills; the bar gets greener the
+  // fuller it is.
   const lerp = (a, b, t) => a.map((x, i) => Math.round(x + (b[i] - x) * t));
   const ramp = (p) => {
     const red = [220, 38, 38], amber = [245, 158, 11], green = [22, 163, 74];
     const rgb = p <= 0.7 ? lerp(red, amber, p / 0.7) : lerp(amber, green, (p - 0.7) / 0.3);
     return '#' + rgb.map((x) => x.toString(16).padStart(2, '0')).join('');
   };
-  const color = a.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#DC2626', ramp(pct)],
-  });
-  const full = pct >= 1;
-  // Overcharge: when the pool is spent, a white droplet drips off the brim.
-  const drop = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (!full) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(drop, { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.delay(400),
-        Animated.timing(drop, { toValue: 0, duration: 0, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [full]);
   return (
     <View style={styles.meterWrap}>
       <View style={[styles.meterTrack, { backgroundColor: c.meterTrack }]}>
-        <Animated.View
-          style={[
-            styles.meterFill,
-            { backgroundColor: color },
-            { width: a.interpolate({ inputRange: [0, 1], outputRange: ['0%', `${pct * 100}%`] }) },
-          ]}
+        <View
+          style={[styles.meterFill, { backgroundColor: ramp(pct), width: `${pct * 100}%` }]}
         />
       </View>
-      {full ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.meterDrop,
-            {
-              left: `${Math.max(4, pct * 100 - 2)}%`,
-              opacity: drop,
-              transform: [{ translateY: drop.interpolate({ inputRange: [0, 1], outputRange: [0, 14] }) }],
-            },
-          ]}
-        />
-      ) : null}
       {label ? <Text style={styles.meterLabel}>{label}</Text> : null}
     </View>
   );
@@ -212,33 +141,26 @@ function Chip({ color, children, onPress }) {
 
 function Btn({ title, color, onPress, primary, small }) {
   const { styles } = useStyles();
-  const s = useRef(new Animated.Value(1)).current;
   return (
-    <Animated.View style={{ transform: [{ scale: s }] }}>
-      <Pressable
-        onPressIn={() => Animated.spring(s, { toValue: 0.96, useNativeDriver: true }).start()}
-        onPressOut={() => Animated.spring(s, { toValue: 1, useNativeDriver: true }).start()}
-        onPress={onPress}
+    <Pressable onPress={onPress}>
+      <View
+        style={[
+          styles.btn, small && styles.btnSmall,
+          primary
+            ? { backgroundColor: color }
+            : { borderWidth: 1, borderColor: color, backgroundColor: 'transparent' },
+        ]}
       >
-        <View
+        <Text
           style={[
-            styles.btn, small && styles.btnSmall,
-            primary
-              ? { backgroundColor: color }
-              : { borderWidth: 1, borderColor: color, backgroundColor: 'transparent' },
+            styles.btnText, small && styles.btnTextSmall,
+            { color: primary ? '#FFFFFF' : color },
           ]}
         >
-          <Text
-            style={[
-              styles.btnText, small && styles.btnTextSmall,
-              { color: primary ? '#FFFFFF' : color },
-            ]}
-          >
-            {title}
-          </Text>
-        </View>
-      </Pressable>
-    </Animated.View>
+          {title}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -354,27 +276,6 @@ function SwipeCard({ c, styles, children, onRemove }) {
   );
 }
 
-// Row entrance: fade + rise, staggered by index.
-function Row({ index, children }) {
-  const a = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(a, {
-      toValue: 1, duration: 300, delay: index * 25, easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, []);
-  return (
-    <Animated.View
-      style={{
-        opacity: a,
-        transform: [{ translateY: a.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
-      }}
-    >
-      {children}
-    </Animated.View>
-  );
-}
-
 // Mini theme preview swatch: light, dark, or split (system).
 function ThemeSwatch({ id }) {
   const base = { width: 40, height: 26, borderRadius: 6, overflow: 'hidden', flexDirection: 'row' };
@@ -410,6 +311,19 @@ const themeCaption = (id, sysScheme) =>
     : id === 'dark'
       ? 'Always dark'
       : 'Always light';
+
+// App header mark: gradient ₹ tile + wordmark. Reused on every page and modal.
+function Logo({ title }) {
+  const { c, styles } = useStyles();
+  return (
+    <View style={styles.logoRow}>
+      <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+        <Text style={styles.markText}>₹</Text>
+      </LinearGradient>
+      <Text style={styles.logo}>{title}</Text>
+    </View>
+  );
+}
 
 // --- App -------------------------------------------------------------------
 
@@ -669,18 +583,7 @@ export default function App() {
     const m = {};
     for (const t of txns) {
       if (!isCurrentMonth(t.date)) continue; // caps reset monthly
-      const action = actionFor(merchantCategory(t.merchant));
-      if (!action) continue;
-      const app = action.apps[0];
-      const scope = matchedFor(t) ? [matchedFor(t)] : wallet;
-      for (const c of scope) {
-        const r = rewardFor(c, action, app);
-        // Minimum-transaction rows: spends below the threshold earn nothing.
-        if (r && r.monthlyCapRs != null && (r.minTxnRs == null || t.amount >= r.minTxnRs)) {
-          const key = spentKey(c.cardKey, r);
-          m[key] = (m[key] || 0) + (t.amount * r.ratePct) / 100;
-        }
-      }
+      fillPool(m, t);
     }
     return m;
   }, [txns, wallet]);
@@ -813,12 +716,7 @@ export default function App() {
       ) : (
         <View style={{ flex: 1 }}>
       <View style={styles.header}>
-        <View style={styles.logoRow}>
-          <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
-            <Text style={styles.markText}>₹</Text>
-          </LinearGradient>
-          <Text style={styles.logo}>CARD SAGE</Text>
-        </View>
+        <Logo title="CARD SAGE" />
         <Text style={styles.sub}>
           {wallet.length ? wallet.length + ' cards' : 'no cards'} · {summary.n} txns ·{' '}
           ₹{summary.scanned.toLocaleString('en-IN')} scanned
@@ -934,7 +832,7 @@ export default function App() {
             );
           })();
           return (
-            <Row index={index}>
+            <View>
               <Pressable style={styles.row} onPress={() => setInspect(item.t)}>
                 <View style={styles.rowTop}>
                   <Text style={styles.merchant} numberOfLines={1}>
@@ -944,7 +842,7 @@ export default function App() {
                 </View>
                 {verdict}
               </Pressable>
-            </Row>
+            </View>
           );
         }}
         ListEmptyComponent={
@@ -979,12 +877,7 @@ export default function App() {
 
       <Modal visible={pickerOpen} animationType="slide">
         <View style={styles.pickerContainer}>
-          <View style={styles.logoRow}>
-            <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
-              <Text style={styles.markText}>₹</Text>
-            </LinearGradient>
-            <Text style={styles.logo}>YOUR CARDS</Text>
-          </View>
+          <Logo title="YOUR CARDS" />
           <Text style={styles.sub}>Pick every card you own. Recommendations use only these.</Text>
           <TextInput
             style={styles.search}
@@ -1061,12 +954,7 @@ export default function App() {
       {shared ? (
         <Modal visible animationType="slide" onRequestClose={() => setShared(null)}>
           <View style={styles.pickerContainer}>
-            <View style={styles.logoRow}>
-              <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
-                <Text style={styles.markText}>₹</Text>
-              </LinearGradient>
-              <Text style={styles.logo}>BEST CARD FOR THIS</Text>
-            </View>
+            <Logo title="BEST CARD FOR THIS" />
             <Text style={styles.cardSub} numberOfLines={3}>
               {shared.text}
             </Text>
@@ -1105,12 +993,7 @@ export default function App() {
       {inspect ? (
         <Modal visible animationType="slide" onRequestClose={() => setInspect(null)}>
           <View style={styles.pickerContainer}>
-            <View style={styles.logoRow}>
-              <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
-                <Text style={styles.markText}>₹</Text>
-              </LinearGradient>
-              <Text style={styles.logo}>IS THIS RIGHT?</Text>
-            </View>
+            <Logo title="IS THIS RIGHT?" />
             <View style={styles.debugBox}>
               <Text style={styles.cardSub} selectable>
                 {inspect.raw || '(no raw body — persisted txn)'}
@@ -1147,12 +1030,7 @@ export default function App() {
       {/* First-run theme onboarding: tap to re-theme live behind this screen. */}
       <Modal visible={themeOpen} animationType="fade">
         <View style={styles.pickerContainer}>
-          <View style={styles.logoRow}>
-            <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
-              <Text style={styles.markText}>₹</Text>
-            </LinearGradient>
-            <Text style={styles.logo}>PICK YOUR THEME</Text>
-          </View>
+          <Logo title="PICK YOUR THEME" />
           <Text style={styles.sub}>
             Tap to preview live — the app behind this screen flips instantly.
           </Text>
@@ -1244,12 +1122,7 @@ function PortalsPage({ c, styles, wallet, spent, openPicker }) {
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.header}>
-        <View style={styles.logoRow}>
-          <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
-            <Text style={styles.markText}>₹</Text>
-          </LinearGradient>
-          <Text style={styles.logo}>PAY PORTALS</Text>
-        </View>
+        <Logo title="PAY PORTALS" />
         <Text style={styles.sub}>
           Tap an action — best card + where to pay. Fee charged by the app: 0% = no card fee.
         </Text>
@@ -1310,12 +1183,7 @@ function PortalModal({ c, styles, action, wallet, spent, onClose, openPicker }) 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <View style={styles.pickerContainer}>
-<View style={styles.logoRow}>
-            <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
-              <Text style={styles.markText}>₹</Text>
-            </LinearGradient>
-            <Text style={styles.logo}>{action.label.toUpperCase()}</Text>
-          </View>
+        <Logo title={action.label.toUpperCase()} />
 
         <View style={{ marginTop: 14 }}>
           <Text style={styles.potentialLabel}>BEST CARD</Text>
@@ -1366,12 +1234,7 @@ function CardsPage({ c, styles, wallet, cardUsage, openPicker, onRemove, earning
     return (
       <View style={{ flex: 1 }}>
         <View style={styles.header}>
-          <View style={styles.logoRow}>
-            <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
-              <Text style={styles.markText}>₹</Text>
-            </LinearGradient>
-            <Text style={styles.logo}>YOUR CARDS</Text>
-          </View>
+          <Logo title="YOUR CARDS" />
         </View>
         <View style={styles.empty}>
           <Fan
@@ -1395,12 +1258,7 @@ function CardsPage({ c, styles, wallet, cardUsage, openPicker, onRemove, earning
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.header}>
-        <View style={styles.logoRow}>
-          <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
-            <Text style={styles.markText}>₹</Text>
-          </LinearGradient>
-          <Text style={styles.logo}>YOUR CARDS</Text>
-        </View>
+        <Logo title="YOUR CARDS" />
         <Text style={styles.sub}>{wallet.length} cards · cap usage from this batch</Text>
         <View style={[styles.actions, { marginTop: 10 }]}>
           <Btn title="+ Add card" color={c.earn} onPress={openPicker} />
@@ -1555,11 +1413,6 @@ const makeStyles = (c) =>
     meterWrap: { marginTop: 8 },
     meterTrack: { height: 8, borderRadius: 4, overflow: 'hidden', width: '100%' },
     meterFill: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 4 },
-    meterDrop: {
-      position: 'absolute', top: 10, width: 8, height: 10, borderRadius: 4,
-      backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOpacity: 0.3,
-      shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2,
-    },
     meterLabel: { fontSize: 11, color: c.sub, marginTop: 4 },
     monthHeader: {
       flexDirection: 'row', alignItems: 'baseline', gap: 8,
