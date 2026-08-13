@@ -25,10 +25,14 @@ const SPEND_WORDS = /(?:spent|debited|charged|paid|purchase|txn|transaction|used
 // Money-in alerts (credited/received/deposited/refunds) — the ledger shows
 // card spends only. Credit bodies often still contain "txn", so this check
 // runs after SPEND_WORDS and drops them.
-const CREDIT_WORDS = /(?:credited|received|deposited|refund|reversal|added to|transferred from|credit note|paid to you|credit(?!\s*card))/i;
+const CREDIT_WORDS = /(?:credited|received|deposited|refund|reversal|added to|transferred from|credit note|paid to you|credit(?!\s*(?:card|limit)))/i;
 
 // Failed/declined alerts: amount + "txn" present, but no money moved.
 const DECLINE_WORDS = /(?:declined|failed|unsuccessful|not completed|rejected|insufficient|wasted)/i;
+
+// OTP/verification alerts: "OTP for txn of Rs.X" looks like a spend but no
+// money moved. Skip before SPEND_WORDS can claim them.
+const OTP_WORDS = /otp|one[- ]?time password/i;
 
 // Sender-ID → bank/issuer name. UPI credit lines (slice, super.money) send
 // from their own ID; banks send their shortcode. Order matters: longest first.
@@ -50,7 +54,8 @@ const SENDER_BANKS = [
 const BODY_BANK = /from\s+([A-Za-z][A-Za-z ]{2,30}?)\s+(?:A\/?c|account|card)/i;
 
 export function parseSms(sender, body) {
-  if (!body || !SPEND_WORDS.test(body)) return null;
+  if (!body || OTP_WORDS.test(body)) return null;
+  if (!SPEND_WORDS.test(body)) return null;
   if (CREDIT_WORDS.test(body)) return null; // money-in: not a spend
   if (DECLINE_WORDS.test(body)) return null; // rejected txn: no money moved
 

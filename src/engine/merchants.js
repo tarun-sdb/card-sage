@@ -81,5 +81,10 @@ export function merchantCategory(merchant) {
       if (stripped.startsWith(key)) return MAP[key];
     }
   }
-  return null;
+  // Unknown named merchant on a card spend → ONLINE_SHOPPING (most common
+  // catch-all; cards earn their online row). Wallet loads stay eliminated:
+  // known wallet keys map to WALLET, which has no action → no reward row.
+  // UPI person-pays (merchant "UPI") stay null so the ledger flags them
+  // "not a card spend".
+  return n === "UPI" ? null : "ONLINE_SHOPPING";
 }

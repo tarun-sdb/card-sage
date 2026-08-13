@@ -11,6 +11,7 @@ const samples = [
   ["SLICE", "₹1,234.00 debited from Slice A/c 9876 via UPI at AMAZON"],
   ["SBIPHONEPE", "Rs.450 debited from SBI Card A/c XX2345 via UPI at ZOMATO"],
   ["HDFCBK", "Rs.500 debited from A/c XX1234 via UPI at PAYTM on 05-Aug-26"],
+  ["HDFCBK", "OTP 123456 for HDFC Card txn of Rs 2,000. Valid 10 mins. Do not share."],
   ["VPAY", "UPI Ref 999: Rs 2,500 debited from HDFC Bank A/c 1234 at BLINKIT"],
 ];
 
