@@ -1,6 +1,9 @@
 name: Android APK build
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       profile:
@@ -57,16 +60,25 @@ jobs:
         working-directory: apps/mobile
         run: npx expo prebuild --platform android --no-install
 
+      - name: Determine build variant
+        id: variant
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "variant=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "variant=${{ github.event.inputs.profile }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build APK
         working-directory: apps/mobile/android
         run: |
-          if [ "${{ github.event.inputs.profile }}" = "release" ]; then
+          if [ "${{ steps.variant.outputs.variant }}" = "release" ]; then
             ./gradlew assembleRelease --no-daemon
           else
             ./gradlew assembleDebug --no-daemon
           fi
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: card-sage-apk
@@ -74,3 +86,10 @@ jobs:
             apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
             apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: warn
+
+      - name: Publish GitHub Release (tag pushes only)
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          generate_release_notes: true
