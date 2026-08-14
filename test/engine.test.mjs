@@ -15,11 +15,11 @@ const top = (aid, appid) => recommend(wallet, act(aid), app(aid, appid))[0];
 
 const cases = [
   ["recharge@phonepe gives Ultimo 10%", top("mobile-recharge", "phonepe"), "PhonePe HDFC Bank Ultimo", 10],
-  ["recharge@paytm NOT 10% (scoped)", top("mobile-recharge", "paytm"), "PhonePe HDFC Bank Ultimo", 1],
+  ["recharge@paytm NOT 10% (scoped)", top("mobile-recharge", "paytm"), "Swiggy HDFC", 1],
   ["dining@swiggy gives Swiggy 10%", top("dining", "swiggy"), "Swiggy HDFC", 10],
   ["dining@zomato NOT Swiggy 10% (scoped)", top("dining", "zomato"), "Swiggy HDFC", 1, "rate"],
   ["fuel gives HPCL Coral 2.5%", top("fuel", "pump"), "HPCL Coral", 2.5],
-  ["online@amazon gives Ultimo 5%", top("online-shopping", "amazon"), "PhonePe HDFC Bank Ultimo", 5],
+  ["online@amazon gives ICICI 5% (cashback beats points)", top("online-shopping", "amazon"), "Amazon Pay ICICI", 5],
 ];
 
 let fail = 0;
