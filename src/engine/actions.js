@@ -20,8 +20,8 @@ export const ACTIONS = [
     category: "UTILITY_BILLS",
     icon: "📱",
     apps: [
-      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/recharge", cardKey: "sbi-phonepe-select-black" },
-      { id: "amazon-pay", label: "Amazon Pay", feePct: 0, url: "https://www.amazon.in/mobile-recharge" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/", cardKey: "sbi-phonepe-select-black" },
+      { id: "amazon-pay", label: "Amazon Pay", feePct: 0, url: "https://www.amazon.in/pay" },
       { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com/recharge" },
       { id: "jio", label: "Jio app", feePct: 0, url: "https://www.jio.com/selfcare/recharge" },
     ],
@@ -32,9 +32,9 @@ export const ACTIONS = [
     category: "UTILITY_BILLS",
     icon: "💡",
     apps: [
-      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/electricity", cardKey: "sbi-phonepe-select-black" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/", cardKey: "sbi-phonepe-select-black" },
       { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com/electricity-bill-payment" },
-      { id: "amazon-pay", label: "Amazon Pay", feePct: 0, url: "https://www.amazon.in/pay/bbps" },
+      { id: "amazon-pay", label: "Amazon Pay", feePct: 0, url: "https://www.amazon.in/pay" },
     ],
   },
   {
@@ -43,7 +43,7 @@ export const ACTIONS = [
     category: "UTILITY_BILLS",
     icon: "📺",
     apps: [
-      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/dth", cardKey: "sbi-phonepe-select-black" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/", cardKey: "sbi-phonepe-select-black" },
       { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com/dth-recharge" },
     ],
   },
@@ -54,7 +54,7 @@ export const ACTIONS = [
     icon: "🔥",
     apps: [
       { id: "paytm", label: "Paytm", feePct: 0, url: "https://paytm.com/gas-cylinder-booking" },
-      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/lpg", cardKey: "sbi-phonepe-select-black" },
+      { id: "phonepe", label: "PhonePe", feePct: 0, url: "https://www.phonepe.com/", cardKey: "sbi-phonepe-select-black" },
     ],
   },
   {
@@ -99,7 +99,7 @@ export const ACTIONS = [
     merchantKeywords: ["hpcl", "hindustan petroleum", "iocl", "indian oil", "bpcl", "bharat petroleum"],
     apps: [
       { id: "pump", label: "At pump (swipe)", feePct: 0, url: null },
-      { id: "hp-pay", label: "HP Pay app", feePct: 0, url: "https://www.hpcl.in/hp-pay" },
+      { id: "hp-pay", label: "HP Pay app", feePct: 0, url: "https://www.hindustanpetroleum.com/hp-pay" },
     ],
   },
   {
@@ -143,7 +143,7 @@ export const ACTIONS = [
     apps: [
       { id: "swiggy", label: "Swiggy", feePct: 0, url: "https://www.swiggy.com" },
       { id: "zomato", label: "Zomato", feePct: 0, url: "https://www.zomato.com" },
-      { id: "dineout", label: "Dineout", feePct: 0, url: "https://www.dineout.co.in" },
+      { id: "dineout", label: "Dineout", feePct: 0, url: "https://www.swiggy.com/dineout" },
     ],
   },
   {
@@ -153,7 +153,7 @@ export const ACTIONS = [
     icon: "✈️",
     apps: [
       { id: "mmt", label: "MakeMyTrip", feePct: 0, url: "https://www.makemytrip.com" },
-      { id: "phonepe", label: "PhonePe Travel", feePct: 0, url: "https://www.phonepe.com/travel", cardKey: "sbi-phonepe-select-black" },
+      { id: "phonepe", label: "PhonePe Travel", feePct: 0, url: "https://www.phonepe.com/", cardKey: "sbi-phonepe-select-black" },
       { id: "goibibo", label: "Goibibo", feePct: 0, url: "https://www.goibibo.com" },
     ],
   },
