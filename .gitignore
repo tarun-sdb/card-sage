@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 *.apk
 *.aab
+
+# local-only
+TODO.md
+push-repo.sh
