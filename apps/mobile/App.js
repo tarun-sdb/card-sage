@@ -15,6 +15,7 @@ import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
 import { loadTxns } from './modules/nightly-scan';
 import ShareReceiver from './modules/share-receiver';
+import { checkUpdate, CUR_VERSION } from './modules/updater';
 
 // Unmapped merchants (UPI person payments etc.) route through the UPI action.
 const UPI_ACTION = ACTIONS.find((a) => a.id === 'upi');
@@ -343,6 +344,7 @@ export default function App() {
   const [collapsed, setCollapsed] = useState({}); // month title → rows hidden
   const [catFilter, setCatFilter] = useState('all'); // ledger category chip
   const [busy, setBusy] = useState(false); // SMS scan in flight (pull-to-refresh spinner)
+  const [update, setUpdate] = useState(null); // { tag, version, url } when newer release exists
 
   // First run: load saved theme, then open the onboarding picker if it's new.
   useEffect(() => {
@@ -374,6 +376,13 @@ export default function App() {
       toValue: 0, speed: 20, bounciness: 5, useNativeDriver: true,
     }).start();
   }, [tab]);
+
+  useEffect(() => {
+    // Silently check GitHub for a newer release; banner only if one exists.
+    checkUpdate().then((u) => {
+      if (u && u.version !== CUR_VERSION) setUpdate(u);
+    });
+  }, []);
 
   useEffect(() => {
     // Restore whatever the last scan persisted.
@@ -879,6 +888,16 @@ export default function App() {
 
       </View>
       )}
+      {update ? (
+        <Pressable
+          onPress={() => Linking.openURL(update.url)}
+          style={{ backgroundColor: c.earn, margin: 10, marginBottom: 0, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10 }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>
+            ⬇ Update {update.tag.replace(/^v/, '')} available — tap to download
+          </Text>
+        </Pressable>
+      ) : null}
       <Dock tab={tab} setTab={setTab} c={c} styles={styles} />
 
       <Modal visible={pickerOpen} animationType="slide">

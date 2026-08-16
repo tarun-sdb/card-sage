@@ -2,8 +2,10 @@
   "expo": {
     "name": "Card Sage",
     "slug": "card-sage",
-    "version": "1.0.0",
-    "plugins": ["./plugins/withShareIntent"],
+    "version": "1.0.1",
+    "plugins": [
+      "./plugins/withShareIntent"
+    ],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -12,13 +14,17 @@
     },
     "android": {
       "package": "in.cardsage.app",
-      "permissions": ["android.permission.READ_SMS", "android.permission.RECEIVE_SMS"],
+      "permissions": [
+        "android.permission.READ_SMS",
+        "android.permission.RECEIVE_SMS"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "versionCode": 3
     }
   }
 }
