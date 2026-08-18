@@ -468,7 +468,12 @@ export default function App() {
       ? wallet.find((w) => w.last4 && w.last4 === t.cardLast4)
       : upiCardFor(t);
 
-  const actionFor = (cat) => (cat ? ACTIONS.find((a) => a.category === cat) : UPI_ACTION);
+  const actionFor = (cat) =>
+    cat === 'WALLET'
+      ? ACTIONS.find((a) => a.id === 'wallet-load')
+      : cat
+        ? ACTIONS.find((a) => a.category === cat)
+        : UPI_ACTION;
 
   // Add one txn's reward to a cap pool (shared by month/cumulative memos).
   const fillPool = (pool, t) => {
