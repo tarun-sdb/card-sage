@@ -1,7 +1,7 @@
 // In-app update check against GitHub Releases.
 // ponytail: CUR_VERSION must match app.json "version" — bump both on release.
 
-export const CUR_VERSION = '1.0.3';
+export const CUR_VERSION = '1.0.4';
 export const APK_URL = 'https://github.com/tarun-sdb/card-sage/releases/latest/download/app-release.apk';
 
 export async function checkUpdate(timeoutMs = 6000) {

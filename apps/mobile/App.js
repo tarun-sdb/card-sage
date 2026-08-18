@@ -7,7 +7,6 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import cardsData from '../../src/data/cards.json';
 import { ACTIONS } from '../../src/engine/actions';
 import { recommend, rewardFor, spentKey } from '../../src/engine/recommend';
 import { parseSms } from '../../src/engine/sms';
@@ -16,6 +15,7 @@ import SmsReader from './modules/sms-reader';
 import { loadTxns } from './modules/nightly-scan';
 import ShareReceiver from './modules/share-receiver';
 import { checkUpdate, CUR_VERSION } from './modules/updater';
+import { loadCards } from './modules/card-data';
 
 // Unmapped merchants (UPI person payments etc.) route through the UPI action.
 const UPI_ACTION = ACTIONS.find((a) => a.id === 'upi');
@@ -345,6 +345,7 @@ export default function App() {
   const [catFilter, setCatFilter] = useState('all'); // ledger category chip
   const [busy, setBusy] = useState(false); // SMS scan in flight (pull-to-refresh spinner)
   const [update, setUpdate] = useState(null); // { tag, version, url } when newer release exists
+  const [cards, setCards] = useState(null); // reward dataset (remote → cache → bundle)
 
   // First run: load saved theme, then open the onboarding picker if it's new.
   useEffect(() => {
@@ -395,22 +396,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    AsyncStorage.getItem(WALLET_KEY).then((raw) => {
-      if (raw) {
-        const saved = JSON.parse(raw);
-        // Migration: old format was ["cardKey", ...] — new is [{cardKey, last4}].
-        const entries = saved.map((e) =>
-          typeof e === 'string' ? { cardKey: e, last4: '' } : e
-        );
-        setWallet(
-          entries
-            .map((e) => ({ ...cardsData.cards.find((c) => c.cardKey === e.cardKey), last4: e.last4 }))
-            .filter((e) => e.cardKey)
-        );
-        setSelected(Object.fromEntries(entries.map((e) => [e.cardKey, e.last4])));
-      } else {
+    // Load the reward dataset first; wallet restore depends on it.
+    loadCards().then((list) => {
+      setCards(list);
+      const byKey = new Map(list.map((c) => [c.cardKey, c]));
+      return AsyncStorage.getItem(WALLET_KEY).then((raw) => ({ raw, byKey }));
+    }).then(({ raw, byKey }) => {
+      if (!raw) {
         setPickerOpen(true); // first run: pick cards
+        return;
       }
+      const saved = JSON.parse(raw);
+      // Migration: old format was ["cardKey", ...] — new is [{cardKey, last4}].
+      // Drop keys no longer in the dataset (renamed/removed cards).
+      const entries = saved
+        .map((e) => (typeof e === 'string' ? { cardKey: e, last4: '' } : e))
+        .filter((e) => byKey.has(e.cardKey));
+      setWallet(entries.map((e) => ({ ...byKey.get(e.cardKey), last4: e.last4 })));
+      setSelected(Object.fromEntries(entries.map((e) => [e.cardKey, e.last4])));
     });
   }, []);
 
@@ -431,7 +434,7 @@ export default function App() {
   };
 
   const saveWallet = () => {
-    const cards = cardsData.cards
+    const cards = cards
       .filter((c) => selected[c.cardKey] !== undefined)
       .map((c) => ({ ...c, last4: (selected[c.cardKey] || '').trim() }));
     setWallet(cards);
@@ -686,8 +689,9 @@ export default function App() {
   // realistic earnings (spend × rate, held at the monthly cap). NOT the cap
   // number — a recharge-only spender sees ~10% of recharges, not ₹2000.
   const cardEarnings = useMemo(() => {
+    if (!cards) return [];
     const out = [];
-    for (const card of cardsData.cards) {
+    for (const card of cards) {
       let total = 0;
       const byCat = {};
       for (const t of txns) {
@@ -708,7 +712,7 @@ export default function App() {
       }
     }
     return out.sort((a, b) => b.earned - a.earned);
-  }, [txns, wallet]);
+  }, [txns, wallet, cards]);
 
   // Per-card cap usage: the most-consumed capped reward row per card.
   const cardUsage = useMemo(() => {
@@ -727,6 +731,15 @@ export default function App() {
     }
     return m;
   }, [wallet, txns, spent]);
+
+  if (!cards) {
+    // Reward dataset still loading (remote fetch or bundle read).
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.background }}>
+        <Text style={{ color: c.muted }}>Loading cards…</Text>
+      </View>
+    );
+  }
 
   return (
     <ThemeContext.Provider value={scheme}>
@@ -925,7 +938,7 @@ export default function App() {
           <FlatList
             data={(() => {
               const q = query.toLowerCase();
-              const all = cardsData.cards.filter(
+              const all = cards.filter(
                 (c) =>
                   !q ||
                   c.name.toLowerCase().includes(q) ||
@@ -1184,7 +1197,7 @@ function PortalsPage({ c, styles, wallet, spent, openPicker }) {
                 <View key={app.id} style={styles.portalApp}>
                   <Text style={[styles.cardSub, { flex: 1, color: c.text }]} numberOfLines={1}>
                     {app.label}
-                    {app.cardKey ? ' · ' + shortName((cardsData.cards.find((cd) => cd.cardKey === app.cardKey) || {}).name || '') : ''}
+                    {app.cardKey ? ' · ' + shortName((cards.find((cd) => cd.cardKey === app.cardKey) || {}).name || '') : ''}
                   </Text>
                   <Chip color={app.feePct > 0 ? c.warn : c.earn}>
                     {app.feePct > 0 ? `${app.feePct}% fee` : '0% fee'}
