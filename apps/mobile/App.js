@@ -607,6 +607,11 @@ export default function App() {
     return txns.slice(0, 30).map((t, i) => {
       const cat = merchantCategory(t.merchant);
       const action = actionFor(cat);
+      // WALLET has no action (wallet loads earn nothing) — keep the row, skip the math.
+      if (!action) {
+        const matched = matchedFor(t);
+        return { t, cat, upi: !cat && !t.cardLast4, matched, top: null, best: null, excluded: null };
+      }
       const app = action.apps[0];
       const matched = matchedFor(t);
       const scope = matched ? [matched] : wallet;
