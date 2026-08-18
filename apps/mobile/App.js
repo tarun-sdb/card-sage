@@ -378,10 +378,22 @@ export default function App() {
     }).start();
   }, [tab]);
 
+  // Numeric per-segment compare: "1.10.0" > "1.9.9". Plain inequality would
+  // banner a downgrade whenever releases/latest lags the installed build.
+  const newer = (a, b) => {
+    const pa = String(a).split('.').map(Number);
+    const pb = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const x = pa[i] || 0;
+      const y = pb[i] || 0;
+      if (x !== y) return x > y;
+    }
+    return false;
+  };
   useEffect(() => {
     // Silently check GitHub for a newer release; banner only if one exists.
     checkUpdate().then((u) => {
-      if (u && u.version !== CUR_VERSION) setUpdate(u);
+      if (u && newer(u.version, CUR_VERSION)) setUpdate(u);
     });
   }, []);
 
