@@ -397,7 +397,7 @@ export default function App() {
 
   useEffect(() => {
     // Load the reward dataset first; wallet restore depends on it.
-    loadCards().then((list) => {
+    loadCards((list) => setCards(list)).then((list) => {
       setCards(list);
       const byKey = new Map(list.map((c) => [c.cardKey, c]));
       return AsyncStorage.getItem(WALLET_KEY).then((raw) => ({ raw, byKey }));
