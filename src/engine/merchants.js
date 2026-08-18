@@ -60,10 +60,12 @@ export function merchantCategory(merchant) {
   for (const key of Object.keys(MAP)) {
     if (new RegExp(`\\b${esc(key)}\\b`).test(n)) return MAP[key];
   }
-  // Wallet merchants appear glued to suffixes ("PAYZAPPWALLET",
-  // "HDFCPAYZAPPWALLET") — plain substring wins for these keys only.
+  // Wallet merchant names glue ("PAYZAPPWALLET", "HDFCPAYZAPPWALLET") — match
+  // only when the string literally names the wallet. Reference runs
+  // ("PAYZAPPW7495373") are card spends at an unknown merchant; they fall
+  // through to the catch-all, never to WALLET.
   for (const key of ["PAYZAPP", "MOBIKWIK", "FREECHARGE"]) {
-    if (n.includes(key)) return MAP[key];
+    if (n.includes(key) && n.includes("WALLET")) return MAP[key];
   }
   // Merchants ship txn/order refs glued on ("GYFTRSM12139725", "SWIGGY99123").
   // Digits are never part of a merchant name — strip the trailing digit-run
@@ -76,8 +78,10 @@ export function merchantCategory(merchant) {
     }
     // Prefix names ("GYFTRSM" starts with GYFTR — no boundary before S).
     // Longest key first so short keys can't win ("GYFTR" beats "G").
+    // Wallet keys are excluded: "PAYZAPPW" ref-artifacts are not wallets.
     const keys = Object.keys(MAP).sort((a, b) => b.length - a.length);
     for (const key of keys) {
+      if (key === "PAYZAPP" || key === "MOBIKWIK" || key === "FREECHARGE") continue;
       if (stripped.startsWith(key)) return MAP[key];
     }
   }
