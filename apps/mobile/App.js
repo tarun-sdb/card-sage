@@ -434,13 +434,13 @@ export default function App() {
   };
 
   const saveWallet = () => {
-    const cards = cards
+    const picked = cards
       .filter((c) => selected[c.cardKey] !== undefined)
       .map((c) => ({ ...c, last4: (selected[c.cardKey] || '').trim() }));
-    setWallet(cards);
+    setWallet(picked);
     AsyncStorage.setItem(
       WALLET_KEY,
-      JSON.stringify(cards.map((c) => ({ cardKey: c.cardKey, last4: c.last4 })))
+      JSON.stringify(picked.map((c) => ({ cardKey: c.cardKey, last4: c.last4 })))
     );
     setPickerOpen(false);
     setTab('portals'); // first-run landing: recommendations, not the empty ledger
@@ -750,7 +750,7 @@ export default function App() {
           onRemove={removeCard} earnings={cardEarnings}
         />
       ) : tab === 'portals' ? (
-        <PortalsPage c={c} styles={styles} wallet={wallet} spent={spent} openPicker={openPicker} />
+        <PortalsPage c={c} styles={styles} wallet={wallet} spent={spent} cards={cards} openPicker={openPicker} />
       ) : (
         <View style={{ flex: 1 }}>
       <View style={styles.header}>
@@ -1165,7 +1165,7 @@ const shareVerdict = async (item) => {
   }
 };
 
-function PortalsPage({ c, styles, wallet, spent, openPicker }) {
+function PortalsPage({ c, styles, wallet, spent, openPicker, cards }) {
   const [sel, setSel] = useState(null); // tapped action → recommendation modal
   return (
     <View style={{ flex: 1 }}>
