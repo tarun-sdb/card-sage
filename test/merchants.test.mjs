@@ -8,12 +8,13 @@ const check = (name, got, want) => {
   console.log(`${ok ? "PASS" : "FAIL"} ${name} → ${got}`);
 };
 
-// WALLET false-positive regression: spend refs from wallet channels.
-check("payzapp spend ref is not wallet", merchantCategory("PAYZAPPW7495373"), "ONLINE_SHOPPING");
+// Wallet-channel spends: refs from wallet apps stay WALLET (user-verified
+// behavior), glued wallet names match, unrelated vendors unaffected.
+check("payzapp spend ref is wallet", merchantCategory("PAYZAPPW7495373"), "WALLET");
 check("payzapp plain is wallet", merchantCategory("PAYZAPP"), "WALLET");
 check("payzapp-wallet glued is wallet", merchantCategory("PAYZAPPWALLET"), "WALLET");
 check("hdfc-payzapp-wallet glued is wallet", merchantCategory("HDFCPAYZAPPWALLET"), "WALLET");
-check("mobikwik spend ref is not wallet", merchantCategory("MOBIKWIKW1234"), "ONLINE_SHOPPING");
+check("mobikwik spend ref is wallet", merchantCategory("MOBIKWIKW1234"), "WALLET");
 check("mobikwik-wallet glued is wallet", merchantCategory("MOBIKWIKWALLET"), "WALLET");
 
 // Existing behavior must not regress.

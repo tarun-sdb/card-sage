@@ -18,14 +18,17 @@ const MERCHANT = /(?:at|to|for)\s+([A-Za-z0-9][A-Za-z0-9&'.\-* ]*?)(?=\s+(?:on|u
 const UPI_ID = /(?:to|from)\s+[a-zA-Z0-9._-]+@[a-zA-Z]{2,}/i;
 
 // Recharge alerts rarely name a merchant ("Rs.249 recharged for 98xxxx").
-const RECHARGE = /(?:recharge|recharged|top[- ]?up)/i;
+const RECHARGE = /\b(?:recharg(?:e|ed|es|ing)?|top[- ]?up)\b/i;
 
-const SPEND_WORDS = /(?:spent|debited|charged|paid|purchase|txn|transaction|used|recharg)/i;
+// Word-token spends. Boundaries matter: "Postpaid"/"Prepaid" ads match
+// /paid/i and bank alerts name "recharging"/"txns" — token-check, not
+// substring-check, or marketing copy becomes a transaction.
+const SPEND_WORDS = /\b(?:spent|debited|charged|paid|purchase|txns?|transactions?|used|recharg(?:e|ed|es|ing)?)\b/i;
 
 // Money-in alerts (credited/received/deposited/refunds) — the ledger shows
 // card spends only. Credit bodies often still contain "txn", so this check
 // runs after SPEND_WORDS and drops them.
-const CREDIT_WORDS = /(?:credited|received|deposited|refund|reversal|added to|transferred from|credit note|paid to you|credit(?!\s*(?:card|limit)))/i;
+const CREDIT_WORDS = /\b(?:credited|received|deposited|refund|reversal|added to|transferred from|credit note|paid to you|credit(?!\s*(?:card|limit)))\b/i;
 
 // Failed/declined alerts: amount + "txn" present, but no money moved.
 const DECLINE_WORDS = /(?:declined|failed|unsuccessful|not completed|rejected|insufficient|wasted)/i;

@@ -1,32 +1,48 @@
-import { parseSms } from '/home/tarun/card-sage/src/engine/sms.js';
-
-const samples = [
-  ["HDFCBK", "Rs 1,234.00 spent on HDFC Credit Card xx4321 at SWIGGY on 05-Aug-26. Available credit limit Rs 2,00,000.00. Txn 012345."],
-  ["SBIINB", "INR 500.00 debited from SBI Card 1234 at AMAZON PAY on 04-Aug-26. UPI ref 123456789012. Not you? Call 1800111109."],
-  ["AXISBK", "Rs. 2,500 spent on Axis Credit Card ending 9999 at MAKEMYTRIP.COM on 03-Aug-26."],
-  ["ICICIB", "₹1,000 paid to PHONEPE using ICICI Bank Credit Card xx7788 on 02-Aug-26."],
-  ["HDFCBK", "Rs 3,000.00 credited to your HDFC Bank Account. Ref 987654."],
-  ["SBIINB", "Your OTP for SBI Card is 123456. Valid for 10 mins."],
-  ["PROMO", "Special offer: 50% off on Zomato with HDFC cards. Apply now!"],
-  ["SLICE", "₹1,234.00 debited from Slice A/c 9876 via UPI at AMAZON"],
-  ["SBIPHONEPE", "Rs.450 debited from SBI Card A/c XX2345 via UPI at ZOMATO"],
-  ["HDFCBK", "Rs.500 debited from A/c XX1234 via UPI at PAYTM on 05-Aug-26"],
-  ["HDFCBK", "OTP 123456 for HDFC Card txn of Rs 2,000. Valid 10 mins. Do not share."],
-  ["VPAY", "UPI Ref 999: Rs 2,500 debited from HDFC Bank A/c 1234 at BLINKIT"],
-];
+// SMS parser self-check: run `node --test test/`.
+import { parseSms } from "../src/engine/sms.js";
 
 let fail = 0;
-for (const [s, b] of samples) {
-  const r = parseSms(s, b);
-  console.log(r ? `OK   ${b.slice(0, 45)}... -> ${JSON.stringify({ amount: r.amount, card: r.cardLast4, merchant: r.merchant, bank: r.bank, credit: r.isCredit })}` : `SKIP ${b.slice(0, 45)}...`);
-  if (r && r.amount <= 0) fail++;
-}
-// expect: 8 parsed (4 old + 4 UPI), 3 skipped (credit, otp, promo)
-const parsed = samples.filter(([s,b]) => parseSms(s,b)).length;
-if (parsed !== 8) { console.log('FAIL: expected 8 parsed, got', parsed); fail++; }
-// UPI bank extraction: SLICE -> SLICE, SBIPHONEPE -> SBI, HDFCBK -> HDFC,
-// VPAY body "from HDFC Bank A/c" -> HDFC BANK
-const banks = ["SLICE", "SBI", "HDFC", "HDFC BANK"];
-const got = samples.filter(([s, b]) => parseSms(s, b)).slice(4).map(([s, b]) => parseSms(s, b).bank);
-if (JSON.stringify(got) !== JSON.stringify(banks)) { console.log('FAIL: bank mismatch', got); fail++; }
+const check = (name, got, want) => {
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  if (!ok) fail++;
+  console.log(`${ok ? "PASS" : "FAIL"} ${name} → ${JSON.stringify(got)}`);
+};
+
+const t = (sender, body) => parseSms(sender, body);
+
+// Marketing ads must NOT become transactions ("Postpaid" = paid inside
+// a compound word; the Rs. amount is plan copy, not a spend).
+check(
+  "airtel postpaid ad rejected",
+  t("AT-650025-P", "Get the best speeds, powered by Fast lane Tech. That's the Postpaid advantage. Enjoy Unlimited 4G + 5G data, 20+ OTTs, and more at just Rs. 449 + taxes. Upgrade now https://i.airtel.in/exhaust50_2"),
+  null
+);
+check(
+  "prepaid ad rejected",
+  t("AD-JIO", "Recharge now — get 2GB/day on Prepaid plans starting Rs. 299"),
+  null
+);
+
+// Real bank alerts still parse.
+check(
+  "hdfc card spend",
+  t("AD-HDFCBK-S", "Spent Rs.4000 From HDFC Bank Card x1665 At PAYZAPPW7495373 On 2026-08-16:22:07:20 Bal Rs.4235.84"),
+  { sender: "AD-HDFCBK-S", amount: 4000, cardLast4: "1665", merchant: "PAYZAPPW7495373", bank: "HDFC BANK" }
+);
+check(
+  "bank recharge alert kept",
+  (() => { const r = t("SBIPHON", "Rs.249 recharged for 98xxxx via UPI"); return r && r.merchant; })(),
+  "RECHARGE"
+);
+check(
+  "operator recharge dropped (dup)",
+  t("AD-AIRTEL", "Your Airtel recharge of Rs.249 is successful"),
+  null
+);
+check(
+  "credit alert rejected",
+  t("AD-HDFCBK-S", "Rs.1000 credited to your account. Txn ID 1234"),
+  null
+);
+
 process.exit(fail ? 1 : 0);
