@@ -1,7 +1,9 @@
 // In-app update check against GitHub Releases.
-// ponytail: CUR_VERSION must match app.json "version" — bump both on release.
+// Version comes from the APK itself (set from app.json at build) — no
+// second copy to drift.
+import { Application } from 'expo-application';
 
-export const CUR_VERSION = '1.0.4';
+export const CUR_VERSION = Application.nativeApplicationVersion || '0.0.0';
 export const APK_URL = 'https://github.com/tarun-sdb/card-sage/releases/latest/download/app-release.apk';
 
 export async function checkUpdate(timeoutMs = 6000) {
