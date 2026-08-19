@@ -30,4 +30,15 @@ for (const [name, pick, cardSubstr, expectPct, mode] of cases) {
   if (!ok) fail++;
   console.log(`${ok ? "PASS" : "FAIL"} ${name} -> ${pick ? pick.card.name + " " + pick.reward.netPct + "%" : "none"}`);
 }
+
+// Cap-exhausted: cap spent → pick flagged, remaining 0, still ranked (visible,
+// honestly labeled) rather than silently dropped.
+const spentPick = recommend(wallet, act("mobile-recharge"), app("mobile-recharge", "phonepe"), { "hdfc-phonepe-ultimo:UTILITY_BILLS": 1200 })[0];
+const exOk = spentPick.exhausted === true && spentPick.remaining === 0;
+fail += exOk ? 0 : 1;
+console.log(`${exOk ? "PASS" : "FAIL"} cap-exhausted pick flagged (spent 1200 of 1000 cap)`);
+const freshPick = recommend(wallet, act("mobile-recharge"), app("mobile-recharge", "phonepe"), {})[0];
+const freshOk = freshPick.exhausted === false && freshPick.remaining === 1000;
+fail += freshOk ? 0 : 1;
+console.log(`${freshOk ? "PASS" : "FAIL"} fresh pick not exhausted (remaining 1000)`);
 process.exit(fail ? 1 : 0);

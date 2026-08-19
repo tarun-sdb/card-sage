@@ -857,6 +857,7 @@ export default function App() {
             // only cardless UPI person-pays are not.
             const label = item.t.bank || item.cat || (item.t.cardLast4 ? 'Unknown merchant' : 'UPI');
             if (item.top) {
+              const top = item.top;
               return (
                 <View>
                   <View style={styles.metaRow}>
@@ -864,16 +865,26 @@ export default function App() {
                       {label}
                       {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                     </Text>
-                    <Chip color={c.earn} onPress={() => shareVerdict(item)}>
-                      ✓ {shortName(item.top.card.name)} — {item.top.reward.netPct}%
-                    </Chip>
+                    {top.exhausted ? (
+                      <Chip color={c.warn} onPress={() => shareVerdict(item)}>
+                        ✓ {shortName(top.card.name)} — cap done
+                      </Chip>
+                    ) : (
+                      <Chip color={c.earn} onPress={() => shareVerdict(item)}>
+                        ✓ {shortName(top.card.name)} — {top.reward.netPct}%
+                      </Chip>
+                    )}
                   </View>
-                  {item.top.cap != null ? (
+                  {top.cap != null ? (
                     <CapMeter
-                      used={item.top.used}
-                      cap={item.top.cap}
+                      used={top.used}
+                      cap={top.cap}
                       c={c}
-                      label={`₹${Math.round(item.top.used).toLocaleString('en-IN')} cashback after this`}
+                      label={
+                        top.exhausted
+                          ? `cap spent — ₹${top.cap.toLocaleString('en-IN')} cashback claimed`
+                          : `₹${Math.round(top.used).toLocaleString('en-IN')} cashback after this`
+                      }
                     />
                   ) : null}
                 </View>
@@ -1281,12 +1292,20 @@ function PortalModal({ c, styles, action, wallet, spent, onClose, openPicker }) 
             <View style={[styles.portalApp, { marginTop: 6 }]}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardName}>{shortName(best.card.name)}</Text>
-                <Text style={styles.cardSub}>
-                  {best.reward.netPct}% net cashback
-                  {best.reward.monthlyCapRs != null ? ` · cap ₹${best.reward.monthlyCapRs.toLocaleString('en-IN')}` : ''}
-                </Text>
+                {best.exhausted ? (
+                  <Text style={styles.cardSub}>
+                    cap done this month — earn 0% until it resets
+                  </Text>
+                ) : (
+                  <Text style={styles.cardSub}>
+                    {best.reward.netPct}% net cashback
+                    {best.reward.monthlyCapRs != null ? ` · cap ₹${best.reward.monthlyCapRs.toLocaleString('en-IN')}` : ''}
+                  </Text>
+                )}
               </View>
-              <Chip color={c.earn}>{best.reward.netPct}%</Chip>
+              <Chip color={best.exhausted ? c.warn : c.earn}>
+                {best.exhausted ? 'cap done' : best.reward.netPct + '%'}
+              </Chip>
             </View>
           ) : (
             <Text style={styles.status}>No wallet card earns here — add one in Cards.</Text>

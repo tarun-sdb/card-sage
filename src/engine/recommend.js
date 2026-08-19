@@ -83,7 +83,7 @@ export function recommend(userCards, action, app, spent = {}) {
       const used = spent[key] || 0;
       const cap = r.monthlyCapRs;
       const remaining = cap != null ? Math.max(0, cap - used) : null;
-      return { card: c, reward: r, used, cap, remaining };
+      return { card: c, reward: r, used, cap, remaining, exhausted: cap != null && used >= cap };
     })
     .filter(Boolean)
     // Value first; cashback beats reward points when rates tie.
