@@ -9,7 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ACTIONS } from '../../src/engine/actions';
 import { recommend, rewardFor, spentKey } from '../../src/engine/recommend';
-import { parseSms } from '../../src/engine/sms';
+import { parseSms, cardsForBank } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
 import { loadTxns } from './modules/nightly-scan';
@@ -628,13 +628,23 @@ export default function App() {
   }, [txns, wallet]);
 
   const rows = useMemo(() => {
+    // UPI hint: best earnable catalog card per bank named in these txns.
+    // Computed once per bank, not per row — scan path stays cheap.
+    const hintByBank = new Map();
+    for (const t of txns.slice(0, 30)) {
+      if (!t.bank || hintByBank.has(t.bank)) continue;
+      const cands = cardsForBank(cards, t.bank);
+      const top = cands.length ? recommend(cands, UPI_ACTION, UPI_ACTION.apps[0], spent)[0] || null : null;
+      hintByBank.set(t.bank, top);
+    }
     return txns.slice(0, 30).map((t, i) => {
       const cat = merchantCategory(t.merchant);
       const action = actionFor(cat);
       // WALLET has no action (wallet loads earn nothing) — keep the row, skip the math.
       if (!action) {
         const matched = matchedFor(t);
-        return { t, cat, upi: !cat && !t.cardLast4, matched, top: null, best: null, excluded: null };
+        const hint = !matched && t.bank ? hintByBank.get(t.bank) : null;
+        return { t, cat, upi: !cat && !t.cardLast4, matched, top: null, best: null, excluded: null, hint };
       }
       const app = action.apps[0];
       const matched = matchedFor(t);
@@ -649,9 +659,10 @@ export default function App() {
       const excluded = rawPicks.find((p) => !earning(p));
       // When the used card is known, also show the best alternative.
       const best = matched ? recommend(wallet, action, app, spentM).filter(earning)[0] : null;
-      return { t, cat, upi: !cat && !t.cardLast4, matched, top: picks[0], best, excluded };
+      const hint = !matched && t.bank ? hintByBank.get(t.bank) : null;
+      return { t, cat, upi: !cat && !t.cardLast4, matched, top: picks[0], best, excluded, hint };
     });
-  }, [txns, wallet, cumSpent]);
+  }, [txns, wallet, cumSpent, cards]);
 
   // Ledger grouped by month; header = month + scanned total, tap collapses.
   // Rows keep their global index so expand/collapse doesn't reshape keys.
@@ -888,9 +899,15 @@ export default function App() {
                   {label}
                   {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
                 </Text>
-                <Chip color={c.muted}>
-                  {item.upi ? 'not a card spend' : 'no reward row'}
-                </Chip>
+                {item.hint ? (
+                  <Chip color={c.earn} onPress={openPicker}>
+                    + add {shortName(item.hint.card.name)} — {item.hint.reward.netPct}%
+                  </Chip>
+                ) : (
+                  <Chip color={c.muted}>
+                    {item.upi ? 'not a card spend' : 'no reward row'}
+                  </Chip>
+                )}
               </View>
             );
           })();

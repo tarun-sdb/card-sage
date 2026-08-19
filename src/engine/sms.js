@@ -92,3 +92,13 @@ const amount = body.match(AMOUNT);
     bank: bodyBank ? bodyBank[1].trim().toUpperCase() : (senderMatch ? senderMatch[1] : null),
   };
 }
+
+// UPI-hint: catalog cards for an SMS-named bank. Alias map grows on real
+// SMS evidence only (YAGNI). Mirrors upiCardFor normalization (strip BANK).
+const BANK_ISSUER = { 'AMERICAN EXPRESS': 'AMEX', 'AU SMALL FINANCE': 'AU', 'SOUTH INDIAN BANK': 'SIB' };
+
+export function cardsForBank(catalog, bank) {
+  const b = (bank || '').replace(/ BANK| MAHINDRA| LIMITED/gi, '').trim().toUpperCase();
+  const issuer = BANK_ISSUER[b] || b;
+  return catalog.filter((c) => (c.issuer || '').toUpperCase() === issuer);
+}
