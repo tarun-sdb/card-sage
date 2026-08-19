@@ -100,5 +100,5 @@ const BANK_ISSUER = { 'AMERICAN EXPRESS': 'AMEX', 'AU SMALL FINANCE': 'AU', 'SOU
 export function cardsForBank(catalog, bank) {
   const b = (bank || '').replace(/ BANK| MAHINDRA| LIMITED/gi, '').trim().toUpperCase();
   const issuer = BANK_ISSUER[b] || b;
-  return catalog.filter((c) => (c.issuer || '').toUpperCase() === issuer);
+  return (catalog || []).filter((c) => (c.issuer || '').toUpperCase() === issuer);
 }

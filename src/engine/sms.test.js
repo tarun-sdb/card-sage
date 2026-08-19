@@ -30,3 +30,7 @@ test('unknown / missing bank returns empty', () => {
   assert.deepEqual(cardsForBank(CAT, 'BANK OF DOGMA'), []);
   assert.deepEqual(cardsForBank(CAT, null), []);
 });
+
+test('null catalog (pre-load) does not crash', () => {
+  assert.deepEqual(cardsForBank(null, 'HDFC'), []);
+});
