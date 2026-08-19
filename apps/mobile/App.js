@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, AppState, Easing, FlatList, Linking, Modal, PanResponder, PermissionsAndroid, Platform,
+  Animated, AppState, Easing, FlatList, Keyboard, Linking, Modal, PanResponder, PermissionsAndroid, Platform,
   Pressable, RefreshControl, SectionList, Share, StyleSheet, Text, TextInput, useColorScheme,
   Vibration, View,
 } from 'react-native';
@@ -446,6 +446,7 @@ export default function App() {
   };
 
   const saveWallet = () => {
+    Keyboard.dismiss();
     const picked = cards
       .filter((c) => selected[c.cardKey] !== undefined)
       .map((c) => ({ ...c, last4: (selected[c.cardKey] || '').trim() }));
@@ -594,17 +595,20 @@ export default function App() {
   // *earlier* txn in that month. Ledger newest-first → top row shows the
   // full month, rows below show partial fills ("cashback so far").
   const cumSpent = useMemo(() => {
+    // One forward pass (oldest → newest): running per-month pool, snapshot
+    // after each txn. Was O(n²) — every row re-filled the whole month.
+    // ponytail: same-millisecond txns snapshot mid-group (old code included
+    // all equal-timestamp siblings); delta is one cap fill, add grouping if
+    // it ever shows up in a meter.
     const m = new Array(txns.length);
-    for (let i = 0; i < txns.length; i++) {
+    const pools = new Map(); // monthKey → running pool
+    for (let i = txns.length - 1; i >= 0; i--) {
       const t = txns[i];
-      const tDate = new Date(t.date).getTime();
-      const pool = {};
-      for (const u of txns) {
-        if (monthKey(u.date) !== monthKey(t.date)) continue;
-        if (new Date(u.date).getTime() > tDate) continue; // only through this txn
-        fillPool(pool, u);
-      }
-      m[i] = pool;
+      const k = monthKey(t.date);
+      const pool = pools.get(k) || {};
+      pools.set(k, pool);
+      fillPool(pool, t);
+      m[i] = { ...pool };
     }
     return m;
   }, [txns, wallet]);
@@ -700,30 +704,39 @@ export default function App() {
   // Spend-based recommender: every card (owned or not) × this month's txns →
   // realistic earnings (spend × rate, held at the monthly cap). NOT the cap
   // number — a recharge-only spender sees ~10% of recharges, not ₹2000.
-  const cardEarnings = useMemo(() => {
-    if (!cards) return [];
-    const out = [];
-    for (const card of cards) {
-      let total = 0;
-      const byCat = {};
-      for (const t of txns) {
-        if (!isCurrentMonth(t.date)) continue;
-        const action = actionFor(merchantCategory(t.merchant));
-        if (!action) continue;
-        const r = rewardFor(card, action, action.apps[0]);
-        if (!r) continue;
-        if (r.minTxnRs != null && t.amount < r.minTxnRs) continue;
-        const e = (t.amount * r.ratePct) / 100;
-        byCat[r.category] = (byCat[r.category] || 0) + e;
-        if (r.monthlyCapRs == null) total += e;
-        else total += Math.min(e, Math.max(0, r.monthlyCapRs - (byCat[r.category] - e)));
-      }
-      if (total > 0) {
-        const topCat = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a])[0];
-        out.push({ card, earned: total, drivers: byCat, topCat });
-      }
-    }
-    return out.sort((a, b) => b.earned - a.earned);
+  const [cardEarnings, setCardEarnings] = useState(null);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setCardEarnings(() => {
+        if (!cards) return [];
+        const rows = cards.map((card) => ({ card, total: 0, byCat: {} }));
+        for (const t of txns) {
+          if (!isCurrentMonth(t.date)) continue;
+          const action = actionFor(merchantCategory(t.merchant));
+          if (!action) continue;
+          const app = action.apps[0];
+          for (const row of rows) {
+            const r = rewardFor(row.card, action, app);
+            if (!r) continue;
+            if (r.minTxnRs != null && t.amount < r.minTxnRs) continue;
+            const e = (t.amount * r.ratePct) / 100;
+            row.byCat[r.category] = (row.byCat[r.category] || 0) + e;
+            if (r.monthlyCapRs == null) row.total += e;
+            else row.total += Math.min(e, Math.max(0, r.monthlyCapRs - (row.byCat[r.category] - e)));
+          }
+        }
+        return rows
+          .filter((row) => row.total > 0)
+          .map((row) => ({
+            card: row.card,
+            earned: row.total,
+            drivers: row.byCat,
+            topCat: Object.keys(row.byCat).sort((a, b) => row.byCat[b] - row.byCat[a])[0],
+          }))
+          .sort((a, b) => b.earned - a.earned);
+      });
+    }, 0);
+    return () => clearTimeout(id);
   }, [txns, wallet, cards]);
 
   // Per-card cap usage: the most-consumed capped reward row per card.
@@ -935,7 +948,7 @@ export default function App() {
       ) : null}
       <Dock tab={tab} setTab={setTab} c={c} styles={styles} />
 
-      <Modal visible={pickerOpen} animationType="slide">
+      <Modal visible={pickerOpen} animationType="slide" onRequestClose={() => { Keyboard.dismiss(); setPickerOpen(false); }}>
         <View style={styles.pickerContainer}>
           <Logo title="YOUR CARDS" />
           <Text style={styles.sub}>Pick every card you own. Recommendations use only these.</Text>
@@ -1006,7 +1019,7 @@ export default function App() {
           />
           <View style={{ gap: 10, marginTop: 12 }}>
             <Btn title={`Save ${count} card${count === 1 ? '' : 's'}`} color={c.earn} primary onPress={saveWallet} />
-            <Btn title="Cancel" color={c.muted} onPress={() => setPickerOpen(false)} />
+            <Btn title="Cancel" color={c.muted} onPress={() => { Keyboard.dismiss(); setPickerOpen(false); }} />
           </View>
         </View>
       </Modal>
@@ -1324,10 +1337,10 @@ function CardsPage({ c, styles, wallet, cardUsage, openPicker, onRemove, earning
           <Btn title="+ Add card" color={c.earn} onPress={openPicker} />
         </View>
       </View>
-      {earnings.length ? (
+      {earnings && earnings.length ? (
         <View style={styles.earnPanel}>
           <Text style={styles.potentialLabel}>BEST FOR YOUR SPENDS</Text>
-          {earnings.slice(0, 3).map((e, i) => {
+          {(earnings || []).slice(0, 3).map((e, i) => {
             const owned = wallet.some((w) => w.cardKey === e.card.cardKey);
             return (
               <Pressable

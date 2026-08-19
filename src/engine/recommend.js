@@ -15,7 +15,13 @@ function netRate(card, action, app) {
 // Merchant-scoped rows (co-brand, portal) fire ONLY when target app matches;
 // otherwise they're ignored entirely (a PhonePe-exclusive rate is never
 // a generic category rate).
-export function rewardFor(card, action, app) {
+// Memo: rewardFor is pure + input-deterministic, but the SMS scan calls it
+// ~57k times with repeated (card, action, app) triples. Key = card identity
+// + every card field the function reads (network; rewards is the card's own
+// array — cardKey covers it) + action/app identity.
+const rewardCache = new Map();
+
+function rewardForUncached(card, action, app) {
   const rows = card.rewards || [];
   const scoped = (r) => !!r.merchants;
   // A scoped row fires only when BOTH: it mentions the chosen app, OR the
@@ -45,6 +51,15 @@ export function rewardFor(card, action, app) {
     if (byCat.length) return bestRow(byCat);
   }
   return bestRow(rows.filter((r) => !scoped(r) && r.category === "DEFAULT"));
+}
+
+export function rewardFor(card, action, app) {
+  const key = `${card.cardKey}|${card.network}|${action.id}|${app && app.id}`;
+  const hit = rewardCache.get(key);
+  if (hit !== undefined && hit.rewards === card.rewards) return hit.row;
+  const r = rewardForUncached(card, action, app);
+  rewardCache.set(key, { rewards: card.rewards, row: r });
+  return r;
 }
 
 function bestRow(rows) {
