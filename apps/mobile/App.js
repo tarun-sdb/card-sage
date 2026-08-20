@@ -314,11 +314,14 @@ const themeCaption = (id, sysScheme) =>
       : 'Always light';
 
 // App header mark: gradient ₹ tile + wordmark. Reused on every page and modal.
+// Brand palette from the Sage Ledger logo (design/logo): sage -> pine diagonal.
+const MARK_SAGE = '#93BE9B';
+const MARK_PINE = '#2E5138';
 function Logo({ title }) {
   const { c, styles } = useStyles();
   return (
     <View style={styles.logoRow}>
-      <LinearGradient colors={[c.earn, c.earn + 'CC']} style={styles.mark}>
+      <LinearGradient colors={[MARK_SAGE, MARK_PINE]} style={styles.mark}>
         <Text style={styles.markText}>₹</Text>
       </LinearGradient>
       <Text style={styles.logo}>{title}</Text>
