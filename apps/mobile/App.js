@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, AppState, FlatList, Keyboard, Linking, Modal, PanResponder, PermissionsAndroid, Platform,
+  Animated, AppState, Easing, FlatList, Keyboard, Linking, Modal, PanResponder, PermissionsAndroid, Platform,
   Pressable, RefreshControl, SectionList, Share, StyleSheet, Text, TextInput, useColorScheme,
   Vibration, View,
 } from 'react-native';
@@ -81,11 +81,27 @@ function Fan({ c, front }) {
   const { styles } = useStyles();
   return (
     <View style={styles.fan}>
-      <LinearGradient colors={[c.surface, c.earn + '14']} style={styles.fanFront}>
+      <LinearGradient
+        colors={[c.surface, c.earn + '14']}
+        style={[styles.fanCard, styles.fanFront]}
+      >
         {front}
       </LinearGradient>
     </View>
   );
+}
+
+function CountUp({ value, style }) {
+  const [disp, setDisp] = useState('0');
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const l = anim.addListener(({ value: v }) => setDisp(String(Math.round(v))));
+    Animated.timing(anim, {
+      toValue: value, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: false,
+    }).start();
+    return () => anim.removeListener(l);
+  }, [value]);
+  return <Text style={style}>₹{Number(disp).toLocaleString('en-IN')}</Text>;
 }
 
 function CapMeter({ used, cap, c, label }) {
@@ -788,7 +804,7 @@ export default function App() {
             front={
               <View style={styles.potentialBody}>
                 <Text style={styles.potentialLabel}>POTENTIAL CASHBACK</Text>
-                <Text style={styles.potentialValue}>₹{Math.round(summary.potential).toLocaleString('en-IN')}</Text>
+                <CountUp value={Math.round(summary.potential)} style={styles.potentialValue} />
               </View>
             }
           />
@@ -1468,6 +1484,10 @@ const makeStyles = (c) =>
     logo: { fontSize: 13, fontWeight: '800', letterSpacing: 2, color: c.text },
     sub: { fontSize: 13, color: c.sub, marginTop: 6 },
     fan: { marginTop: 16, height: 84, marginBottom: 6 },
+    fanCard: {
+      position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+      borderRadius: 14, borderWidth: 1, borderColor: c.hairline, backgroundColor: c.surface,
+    },
     fanFront: { padding: 14, elevation: 3, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
     potentialBody: { justifyContent: 'center', height: '100%' },
     potentialLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, color: c.sub },
