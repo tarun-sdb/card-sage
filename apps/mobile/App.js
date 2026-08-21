@@ -781,6 +781,13 @@ export default function App() {
     return () => clearTimeout(id);
   }, [txns, wallet, cards]);
 
+  // "Top earner" = best of the user's OWN cards. cardEarnings spans the whole
+  // catalog (Cards page uses it to suggest adds) — [0] can be unowned.
+  const topEarner = useMemo(
+    () => (cardEarnings || []).find((e) => wallet.some((w) => w.cardKey === e.card.cardKey)) || null,
+    [cardEarnings, wallet]
+  );
+
   // Per-card cap usage: the most-consumed capped reward row per card.
   const cardUsage = useMemo(() => {
     const m = {};
@@ -837,10 +844,10 @@ export default function App() {
             }
           />
         ) : null}
-        {cardEarnings && cardEarnings.length ? (
+        {topEarner ? (
           <Pressable onPress={() => setTab('cards')}>
             <Text style={styles.status}>
-              Top earner: {shortName(cardEarnings[0].card.name)} · ₹{Math.round(cardEarnings[0].earned).toLocaleString('en-IN')}/mo →
+              Top earner: {shortName(topEarner.card.name)} · ₹{Math.round(topEarner.earned).toLocaleString('en-IN')}/mo →
             </Text>
           </Pressable>
         ) : null}
