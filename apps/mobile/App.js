@@ -1490,6 +1490,7 @@ function CardsPage({ c, styles, wallet, cardUsage, openPicker, onRemove, earning
         ItemSeparatorComponent={() => <View style={styles.hairline} />}
         renderItem={({ item }) => {
           const u = cardUsage[item.cardKey];
+          const e = (earnings || []).find((x) => x.card.cardKey === item.cardKey);
           return (
             <SwipeCard c={c} styles={styles} onRemove={() => onRemove(item.cardKey)}>
               <View style={styles.cardPageRow}>
@@ -1517,6 +1518,11 @@ function CardsPage({ c, styles, wallet, cardUsage, openPicker, onRemove, earning
                 ) : (
                   <Text style={[styles.meta, { marginTop: 12 }]}>no capped spends in this batch</Text>
                 )}
+                {e ? (
+                  <Text style={[styles.meta, { marginTop: 6 }]}>
+                    ≈ ₹{Math.round(e.earned).toLocaleString('en-IN')}/mo cashback at this spend
+                  </Text>
+                ) : null}
               </View>
             </SwipeCard>
           );
