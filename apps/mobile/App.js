@@ -12,7 +12,7 @@ import { recommend, rewardFor, spentKey } from '../../src/engine/recommend';
 import { parseSms, cardsForBank } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
-import { loadTxns } from './modules/nightly-scan';
+import { loadTxns, loadLearnt, saveLearnt } from './modules/nightly-scan';
 import ShareReceiver from './modules/share-receiver';
 import { checkUpdate, CUR_VERSION } from './modules/updater';
 import { loadCards } from './modules/card-data';
@@ -43,6 +43,12 @@ const monthKey = (d) => {
   const x = new Date(d);
   if (isNaN(x.getTime())) return 'Unknown';
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`;
+};
+
+// Days until caps reset (month end).
+const daysLeftInMonth = () => {
+  const n = new Date();
+  return new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate() - n.getDate();
 };
 
 // "The Ledger" — color encodes meaning only. earn = winning, warn = min not
@@ -349,6 +355,8 @@ export default function App() {
   const [busy, setBusy] = useState(false); // SMS scan in flight (pull-to-refresh spinner)
   const [update, setUpdate] = useState(null); // { tag, version, url } when newer release exists
   const [cards, setCards] = useState(null); // reward dataset (remote → cache → bundle)
+  const [learnt, setLearnt] = useState({}); // taught bank → cardKey mappings
+  const [teach, setTeach] = useState(null); // txn → "which card was this?" sheet
 
   // First run: load saved theme, then open the onboarding picker if it's new.
   useEffect(() => {
@@ -411,6 +419,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    loadLearnt().then(setLearnt);
+  }, []);
+
+  useEffect(() => {
     // Load the reward dataset first; wallet restore depends on it.
     loadCards((list) => setCards(list)).then((list) => {
       setCards(list);
@@ -436,6 +448,19 @@ export default function App() {
     setSelected(Object.fromEntries(wallet.map((c) => [c.cardKey, c.last4 || ''])));
     setQuery('');
     setPickerOpen(true);
+  };
+
+  // Teach: remember which wallet card this bank's txns belong to.
+  const teachCard = (w) => {
+    if (!teach || !teach.bank) {
+      setTeach(null);
+      return;
+    }
+    const b = teach.bank.replace(/ BANK| MAHINDRA| LIMITED/gi, '').trim().toUpperCase();
+    const next = { ...learnt, [b]: w.cardKey };
+    setLearnt(next);
+    saveLearnt(next);
+    setTeach(null);
   };
 
   // Cards page removal — picker is add-only now.
@@ -468,6 +493,9 @@ export default function App() {
   const upiCardFor = (t) => {
     if (!t.bank) return null;
     const b = t.bank.replace(/ BANK| MAHINDRA| LIMITED/gi, '').trim().toUpperCase();
+    // Taught mappings win — covers banks the sender-ID table misses.
+    const taught = learnt[b] && wallet.find((w) => w.cardKey === learnt[b]);
+    if (taught) return taught;
     const bankName = (w) => (w.issuer || '').toUpperCase();
     const match = wallet.find(
       (w) =>
@@ -614,7 +642,7 @@ export default function App() {
       m[i] = { ...pool };
     }
     return m;
-  }, [txns, wallet]);
+  }, [txns, wallet, learnt]);
 
   // reward units (cashback ₹/points), so "used" = txn amount × rate, not the
   // raw amount — otherwise ₹28k spend against a ₹400 cap shows 28305/400.
@@ -628,7 +656,7 @@ export default function App() {
       fillPool(m, t);
     }
     return m;
-  }, [txns, wallet]);
+  }, [txns, wallet, learnt]);
 
   const rows = useMemo(() => {
     // UPI hint: best earnable catalog card per bank named in these txns.
@@ -665,7 +693,7 @@ export default function App() {
       const hint = !matched && t.bank ? hintByBank.get(t.bank) : null;
       return { t, cat, upi: !cat && !t.cardLast4, matched, top: picks[0], best, excluded, hint };
     });
-  }, [txns, wallet, cumSpent, cards]);
+  }, [txns, wallet, cumSpent, cards, learnt]);
 
   // Ledger grouped by month; header = month + scanned total, tap collapses.
   // Rows keep their global index so expand/collapse doesn't reshape keys.
@@ -809,6 +837,13 @@ export default function App() {
             }
           />
         ) : null}
+        {cardEarnings && cardEarnings.length ? (
+          <Pressable onPress={() => setTab('cards')}>
+            <Text style={styles.status}>
+              Top earner: {shortName(cardEarnings[0].card.name)} · ₹{Math.round(cardEarnings[0].earned).toLocaleString('en-IN')}/mo →
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {status ? <Text style={styles.status}>{status}</Text> : null}
@@ -886,7 +921,7 @@ export default function App() {
                       label={
                         top.exhausted
                           ? `cap spent — ₹${top.cap.toLocaleString('en-IN')} cashback claimed`
-                          : `₹${Math.round(top.used).toLocaleString('en-IN')} cashback after this`
+                          : `₹${Math.max(0, Math.round(top.cap - top.used)).toLocaleString('en-IN')} to cap · ${daysLeftInMonth()}d left`
                       }
                     />
                   ) : null}
@@ -918,7 +953,10 @@ export default function App() {
                     + add {shortName(item.hint.card.name)} — {item.hint.reward.netPct}%
                   </Chip>
                 ) : (
-                  <Chip color={c.muted}>
+                  <Chip
+                    color={c.muted}
+                    onPress={wallet.length ? () => setTeach(item.t) : undefined}
+                  >
                     {item.upi ? 'not a card spend' : 'no reward row'}
                   </Chip>
                 )}
@@ -1042,7 +1080,7 @@ export default function App() {
                       onPress={() =>
                         on
                           ? null // add-only: un-adding happens on the Cards page
-                          : setSelected((s) => ({ ...s, [item.cardKey]: '' }))
+                          : setSelected((s) => ({ ...s, [item.cardKey]: last4ForIssuer(txns, item.issuer) }))
                       }
                     />
                   </View>
@@ -1133,6 +1171,25 @@ export default function App() {
         </Modal>
       ) : null}
 
+      {teach ? (
+        <Modal visible animationType="slide" onRequestClose={() => setTeach(null)}>
+          <View style={styles.pickerContainer}>
+            <Logo title="WHICH CARD WAS THIS?" />
+            <Text style={styles.cardSub} numberOfLines={3}>
+              {teach.raw || `${teach.merchant || 'UPI'} · ₹${teach.amount.toLocaleString('en-IN')}`}
+            </Text>
+            <View style={{ marginTop: 16, gap: 10 }}>
+              {wallet.map((w) => (
+                <Btn key={w.cardKey} title={shortName(w.name)} color={c.earn} onPress={() => teachCard(w)} />
+              ))}
+            </View>
+            <View style={{ gap: 10, marginTop: 20 }}>
+              <Btn title="Close" color={c.muted} onPress={() => setTeach(null)} />
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+
       {/* First-run theme onboarding: tap to re-theme live behind this screen. */}
       <Modal visible={themeOpen} animationType="fade">
         <View style={styles.pickerContainer}>
@@ -1186,6 +1243,18 @@ const humanize = (s) =>
   (s || '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 const cardType = (name) => (/debit/i.test(name) ? 'DEBIT' : 'CREDIT');
 const shortName = (n) => n.replace(/ (Credit|Debit|Charge) Card$/, '');
+// Auto-fill: the one last4 this issuer's SMS alerts mention, if unambiguous.
+const last4ForIssuer = (txns, issuer) => {
+  const iss = String(issuer || '').toUpperCase();
+  if (!iss) return '';
+  const seen = new Set();
+  for (const t of txns) {
+    if (!t.cardLast4 || !t.bank) continue;
+    const b = t.bank.replace(/ BANK| MAHINDRA| LIMITED/gi, '').trim().toUpperCase();
+    if (b === iss) seen.add(t.cardLast4);
+  }
+  return seen.size === 1 ? [...seen][0] : '';
+};
 // Portal accent: color dot per action, matches card-face palette language.
 const PORTAL_COLORS = {
   'mobile-recharge': ['#2563EB', '#60A5FA'], 'electricity-bill': ['#F59E0B', '#FBBF24'],
@@ -1435,7 +1504,7 @@ function CardsPage({ c, styles, wallet, cardUsage, openPicker, onRemove, earning
                       used={u.used}
                       cap={u.cap}
                       c={c}
-                      label={`${humanize(u.cat)} cap — ₹${u.used.toLocaleString('en-IN')}/${u.cap.toLocaleString('en-IN')} used`}
+                      label={`${humanize(u.cat)} cap — ₹${u.used.toLocaleString('en-IN')}/${u.cap.toLocaleString('en-IN')} · ${daysLeftInMonth()}d left`}
                     />
                   </View>
                 ) : (

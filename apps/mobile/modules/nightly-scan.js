@@ -12,3 +12,19 @@ export async function loadTxns() {
     return [];
   }
 }
+
+// Taught bank → cardKey mappings ("which card was this?" picks).
+const LEARNT_KEY = 'card-sage:learnt';
+
+export async function loadLearnt() {
+  try {
+    const raw = await AsyncStorage.getItem(LEARNT_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveLearnt(map) {
+  return AsyncStorage.setItem(LEARNT_KEY, JSON.stringify(map)).catch(() => {});
+}
