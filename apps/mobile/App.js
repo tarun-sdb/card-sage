@@ -1010,7 +1010,8 @@ export default function App() {
             ItemSeparatorComponent={() => <View style={styles.hairline} />}
             renderItem={({ item }) => {
               const on = selected[item.cardKey] !== undefined;
-              const hasNum = /^\d{4}$/.test((selected[item.cardKey] || '').trim());
+              const inWallet = wallet.some((w) => w.cardKey === item.cardKey);
+              const saved = inWallet && /^\d{4}$/.test((selected[item.cardKey] || '').trim());
               return (
                 <View style={[styles.cardRow, on && styles.cardRowOn]}>
                   <View style={{ flex: 1 }}>
@@ -1035,8 +1036,8 @@ export default function App() {
                   </View>
                   <View style={{ width: 96 }}>
                     <Btn
-                      title={on ? (hasNum ? 'Added' : 'Adding') : 'Add'}
-                      color={on ? (hasNum ? c.sub : c.earn) : c.earn}
+                      title={on ? (saved ? 'Added' : 'Adding') : 'Add'}
+                      color={on ? (saved ? c.sub : c.earn) : c.earn}
                       small
                       onPress={() =>
                         on
