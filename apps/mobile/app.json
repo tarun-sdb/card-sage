@@ -2,7 +2,7 @@
   "expo": {
     "name": "Card Sage",
     "slug": "card-sage",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "plugins": [
       "./plugins/withShareIntent"
     ],
@@ -24,7 +24,7 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "versionCode": 6
+      "versionCode": 7
     }
   }
 }
