@@ -1010,7 +1010,7 @@ export default function App() {
             ItemSeparatorComponent={() => <View style={styles.hairline} />}
             renderItem={({ item }) => {
               const on = selected[item.cardKey] !== undefined;
-              const hasNum = !!(selected[item.cardKey] && selected[item.cardKey].trim());
+              const hasNum = /^\d{4}$/.test((selected[item.cardKey] || '').trim());
               return (
                 <View style={[styles.cardRow, on && styles.cardRowOn]}>
                   <View style={{ flex: 1 }}>
