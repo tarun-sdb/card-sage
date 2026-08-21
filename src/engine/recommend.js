@@ -95,13 +95,5 @@ export function recommend(userCards, action, app, spent = {}) {
     );
 }
 
-// Skip-card actions (bills where fees beat rewards). Returns true when even the
-// best card's net rate can't beat the fee-free default (bank app / UPI).
-// Used by the web portal (src/App.jsx) to flag fee-heavy actions.
-export function shouldSkipCard(userCards, action, app, spent = {}) {
-  if (!action.note && !action.apps.some((a) => a.recommend === "skip-card")) return false;
-  const top = recommend(userCards, action, app, spent)[0];
-  // Net rate under ~0.5% isn't worth card friction; default is fee-free.
-  return !top || top.reward.netPct < 0.5;
-}
+
 

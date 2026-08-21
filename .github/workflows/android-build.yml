@@ -49,14 +49,6 @@ jobs:
           key: gradle-${{ hashFiles('apps/mobile/android/**') }}
           restore-keys: gradle-
 
-      - name: Cache metro
-        uses: actions/cache@v4
-        with:
-          path: |
-            apps/mobile/node_modules/.cache
-            /tmp/metro-*
-          key: metro-${{ github.sha }}
-          restore-keys: metro-
 
       - name: Generate native project
         working-directory: apps/mobile
