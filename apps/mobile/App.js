@@ -1010,6 +1010,7 @@ export default function App() {
             ItemSeparatorComponent={() => <View style={styles.hairline} />}
             renderItem={({ item }) => {
               const on = selected[item.cardKey] !== undefined;
+              const hasNum = !!(selected[item.cardKey] && selected[item.cardKey].trim());
               return (
                 <View style={[styles.cardRow, on && styles.cardRowOn]}>
                   <View style={{ flex: 1 }}>
@@ -1034,8 +1035,8 @@ export default function App() {
                   </View>
                   <View style={{ width: 96 }}>
                     <Btn
-                      title={on ? 'Added' : 'Add'}
-                      color={on ? c.sub : c.earn}
+                      title={on ? (hasNum ? 'Added' : 'Adding') : 'Add'}
+                      color={on ? (hasNum ? c.sub : c.earn) : c.earn}
                       small
                       onPress={() =>
                         on
