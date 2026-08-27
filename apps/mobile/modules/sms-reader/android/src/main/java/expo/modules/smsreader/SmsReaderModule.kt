@@ -10,16 +10,16 @@ class SmsReaderModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("SmsReader")
 
-        // Read last N SMS after permission granted. Returns
-        // [{sender, body, date, address}] so the JS layer can parse
-        // transaction messages and match merchant/card.
-        AsyncFunction("readSms") { limit: Int ->
+        // Read SMS after a cutoff timestamp (ms since epoch) after permission
+        // granted. Returns [{sender, body, date}] ordered newest-first so the
+        // JS layer can parse transaction messages and match merchant/card.
+        AsyncFunction("readSms") { sinceMs: Long ->
             val context = appContext.reactContext ?: return@AsyncFunction emptyList<Map<String, Any>>()
-            read(context, limit)
+            read(context, sinceMs)
         }
     }
 
-    private fun read(context: Context, limit: Int): List<Map<String, Any>> {
+    private fun read(context: Context, sinceMs: Long): List<Map<String, Any>> {
         val out = mutableListOf<Map<String, Any>>()
         val uri = Telephony.Sms.Inbox.CONTENT_URI
         val projection = arrayOf(
@@ -27,9 +27,10 @@ class SmsReaderModule : Module() {
             Telephony.Sms.BODY,
             Telephony.Sms.DATE
         )
-        context.contentResolver.query(uri, projection, null, null, "${Telephony.Sms.DATE} DESC")?.use { c: Cursor ->
-            var i = 0
-            while (c.moveToNext() && i < limit) {
+        val selection = "${Telephony.Sms.DATE} >= ?"
+        val selectionArgs = arrayOf(sinceMs.toString())
+        context.contentResolver.query(uri, projection, selection, selectionArgs, "${Telephony.Sms.DATE} DESC")?.use { c: Cursor ->
+            while (c.moveToNext()) {
                 out.add(
                     mapOf(
                         "sender" to (c.getString(0) ?: ""),
@@ -37,7 +38,6 @@ class SmsReaderModule : Module() {
                         "date" to c.getLong(2)
                     )
                 )
-                i++
             }
         }
         return out

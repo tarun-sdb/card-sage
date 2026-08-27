@@ -556,7 +556,7 @@ export default function App() {
         setStatus('Permission denied. Grant SMS access in settings.');
         return;
       }
-      const messages = await SmsReader.readSms(200);
+      const messages = await SmsReader.readSms(Date.now() - 30 * 24 * 3600 * 1000);
       const parsed = messages
         .map((m) => ({ ...parseSms(m.sender, m.body), date: m.date, raw: m.body }))
         .filter((t) => t.amount != null);

@@ -5,10 +5,10 @@ import { requireNativeModule } from 'expo-modules-core';
 let module: any | null = null;
 
 export default {
-  readSms(limit: number) {
+  readSms(sinceMs: number) {
     if (!module) {
       module = requireNativeModule('SmsReader');
     }
-    return module.readSms(limit);
+    return module.readSms(sinceMs);
   },
 };
