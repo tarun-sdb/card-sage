@@ -3,10 +3,22 @@
 // second copy to drift. expo-constants is registered in the app already;
 // expoConfig.version is the app.json "version" embedded at build.
 import Constants from 'expo-constants';
+import SmsReader from './sms-reader';
 
 export const CUR_VERSION =
   Constants.expoConfig?.version || Constants.nativeApplicationVersion || '0.0.0';
-export const APK_URL = 'https://github.com/tarun-sdb/card-sage/releases/latest/download/app-release.apk';
+
+// Per-ABI release APKs (Play split format). Device picks its own arch.
+export const ABI = () => {
+  try {
+    const a = SmsReader.getAbi();
+    return ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'].includes(a) ? a : 'arm64-v8a';
+  } catch {
+    return 'arm64-v8a';
+  }
+};
+export const APK_URL = () =>
+  `https://github.com/tarun-sdb/card-sage/releases/latest/download/app-${ABI()}-release.apk`;
 
 export async function checkUpdate(timeoutMs = 6000) {
   const ctl = new AbortController();
@@ -21,7 +33,7 @@ export async function checkUpdate(timeoutMs = 6000) {
     return {
       tag: j.tag_name,
       version: j.tag_name.replace(/^v/, ''),
-      url: APK_URL,
+      url: APK_URL(),
     };
   } catch {
     return null;

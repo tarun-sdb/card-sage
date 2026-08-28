@@ -5,6 +5,12 @@ import { requireNativeModule } from 'expo-modules-core';
 let module: any | null = null;
 
 export default {
+  getAbi(): string {
+    if (!module) {
+      module = requireNativeModule('SmsReader');
+    }
+    return module.getAbi();
+  },
   readSms(sinceMs: number) {
     if (!module) {
       module = requireNativeModule('SmsReader');

@@ -4,7 +4,8 @@
     "slug": "card-sage",
     "version": "1.0.7",
     "plugins": [
-      "./plugins/withShareIntent"
+      "./plugins/withShareIntent",
+      "./plugins/withAbiSplits"
     ],
     "orientation": "portrait",
     "icon": "./assets/icon.png",

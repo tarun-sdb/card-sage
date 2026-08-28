@@ -2,6 +2,7 @@ package expo.modules.smsreader
 
 import android.content.Context
 import android.database.Cursor
+import android.os.Build
 import android.provider.Telephony
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -9,6 +10,10 @@ import expo.modules.kotlin.modules.ModuleDefinition
 class SmsReaderModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("SmsReader")
+
+        // Preferred supported ABI ("arm64-v8a" etc) so the updater can fetch
+        // the matching per-ABI release APK.
+        Function("getAbi") { Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown" }
 
         // Read SMS after a cutoff timestamp (ms since epoch) after permission
         // granted. Returns [{sender, body, date}] ordered newest-first so the
