@@ -3,6 +3,7 @@ import { isBillPayment } from '../../src/engine/sms';
 
 const TXNS_KEY = 'card-sage:txns';
 const LAST_MAX_DATE_KEY = 'card-sage:lastMaxDate';
+const SCAN_META_KEY = 'card-sage:scanMeta';
 const LEARNT_KEY = 'card-sage:learnt';
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -30,6 +31,21 @@ export async function getLastProcessedMaxDate() {
 
 export async function updateLastProcessedMaxDate(maxDate) {
   return AsyncStorage.setItem(LAST_MAX_DATE_KEY, String(maxDate)).catch(() => {});
+}
+
+// Freshness: when the last SMS refresh landed + whether it succeeded.
+// Ledger header renders "as of …" from this; failures keep the old stamp.
+export async function getScanMeta() {
+  try {
+    const raw = await AsyncStorage.getItem(SCAN_META_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveScanMeta(meta) {
+  return AsyncStorage.setItem(SCAN_META_KEY, JSON.stringify(meta)).catch(() => {});
 }
 
 function txnKey(t) {

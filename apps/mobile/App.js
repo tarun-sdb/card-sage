@@ -12,7 +12,7 @@ import { recommend, rewardFor, spentKey } from '../../src/engine/recommend';
 import { parseSms, cardsForBank } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
-import { loadTxns, loadLearnt, saveLearnt, mergeAndPurge, getLastProcessedMaxDate, THIRTY_DAYS_MS } from './modules/nightly-scan';
+import { loadTxns, loadLearnt, saveLearnt, mergeAndPurge, getLastProcessedMaxDate, getScanMeta, saveScanMeta, THIRTY_DAYS_MS } from './modules/nightly-scan';
 import ShareReceiver from './modules/share-receiver';
 import { checkUpdate, CUR_VERSION, downloadAndInstallApk } from './modules/updater';
 import { loadCards } from './modules/card-data';
@@ -357,6 +357,7 @@ export default function App() {
   const [dlProgress, setDlProgress] = useState(null); // 0..1 during APK download
   const [cards, setCards] = useState(null); // reward dataset (remote → cache → bundle)
   const [learnt, setLearnt] = useState({}); // taught bank → cardKey mappings
+  const [scanMeta, setScanMeta] = useState(null); // { asOf, ok } — ledger freshness stamp
   const [teach, setTeach] = useState(null); // txn → "which card was this?" sheet
 
   // First run: load saved theme, then open the onboarding picker if it's new.
@@ -417,6 +418,7 @@ export default function App() {
         setStatus(`${saved.length} transactions auto-scanned.`);
       }
     });
+    getScanMeta().then(setScanMeta);
   }, []);
 
   useEffect(() => {
@@ -566,8 +568,15 @@ export default function App() {
       const merged = await mergeAndPurge(existing, parsed);
       setBatch((b) => b + 1);
       setTxns(merged);
+      const meta = { asOf: Date.now(), ok: true };
+      setScanMeta(meta);
+      await saveScanMeta(meta);
       setStatus(`Parsed ${parsed.length} new transactions (${merged.length} total).`);
     } catch (e) {
+      const prev = (await getScanMeta()) || {};
+      const meta = { ...prev, ok: false };
+      setScanMeta(meta);
+      await saveScanMeta(meta);
       setStatus('Error: ' + e.message);
     } finally {
       setBusy(false);
@@ -834,6 +843,9 @@ export default function App() {
         <Text style={styles.sub}>
           {wallet.length ? wallet.length + ' cards' : 'no cards'} · {summary.n} txns ·{' '}
           ₹{summary.scanned.toLocaleString('en-IN')} scanned
+          {scanMeta?.asOf
+            ? ` · as of ${new Date(scanMeta.asOf).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}${scanMeta.ok === false ? ' (refresh failed)' : ''}`
+            : ''}
         </Text>
         {summary.n > 0 ? (
           <Fan
