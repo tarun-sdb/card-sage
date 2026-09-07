@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// AsyncStorage txn ledger. App.js mount/resume scans write it, this restores
-// it. Background nightly scan was cut — resume scan covers the gap.
 const TXNS_KEY = 'card-sage:txns';
+const LAST_MAX_DATE_KEY = 'card-sage:lastMaxDate';
+const LEARNT_KEY = 'card-sage:learnt';
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 export async function loadTxns() {
   try {
@@ -13,8 +14,47 @@ export async function loadTxns() {
   }
 }
 
-// Taught bank → cardKey mappings ("which card was this?" picks).
-const LEARNT_KEY = 'card-sage:learnt';
+export async function saveTxns(txns) {
+  return AsyncStorage.setItem(TXNS_KEY, JSON.stringify(txns)).catch(() => {});
+}
+
+export async function getLastProcessedMaxDate() {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_MAX_DATE_KEY);
+    return raw ? Number(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateLastProcessedMaxDate(maxDate) {
+  return AsyncStorage.setItem(LAST_MAX_DATE_KEY, String(maxDate)).catch(() => {});
+}
+
+function txnKey(t) {
+  return `${t.date}|${t.amount}|${t.cardLast4}|${t.merchant}`;
+}
+
+export async function mergeAndPurge(existing, newTxns) {
+  const seen = new Set(existing.map(txnKey));
+  const merged = [...existing];
+  let newMax = 0;
+  for (const t of newTxns) {
+    const k = txnKey(t);
+    if (!seen.has(k)) {
+      merged.push(t);
+      seen.add(k);
+    }
+    if (t.date > newMax) newMax = t.date;
+  }
+  const cutoff = Date.now() - THIRTY_DAYS_MS;
+  const purged = merged.filter((t) => t.date >= cutoff);
+  const now = Date.now();
+  const maxDate = Math.max(...purged.map((t) => t.date), 0);
+  await saveTxns(purged);
+  if (maxDate > 0 && maxDate <= now) await updateLastProcessedMaxDate(maxDate);
+  return purged;
+}
 
 export async function loadLearnt() {
   try {

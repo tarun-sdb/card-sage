@@ -12,9 +12,9 @@ import { recommend, rewardFor, spentKey } from '../../src/engine/recommend';
 import { parseSms, cardsForBank } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
-import { loadTxns, loadLearnt, saveLearnt } from './modules/nightly-scan';
+import { loadTxns, loadLearnt, saveLearnt, mergeAndPurge, getLastProcessedMaxDate, THIRTY_DAYS_MS } from './modules/nightly-scan';
 import ShareReceiver from './modules/share-receiver';
-import { checkUpdate, CUR_VERSION } from './modules/updater';
+import { checkUpdate, CUR_VERSION, downloadAndInstallApk } from './modules/updater';
 import { loadCards } from './modules/card-data';
 
 // Unmapped merchants (UPI person payments etc.) route through the UPI action.
@@ -354,6 +354,7 @@ export default function App() {
   const [catFilter, setCatFilter] = useState('all'); // ledger category chip
   const [busy, setBusy] = useState(false); // SMS scan in flight (pull-to-refresh spinner)
   const [update, setUpdate] = useState(null); // { tag, version, url } when newer release exists
+  const [dlProgress, setDlProgress] = useState(null); // 0..1 during APK download
   const [cards, setCards] = useState(null); // reward dataset (remote → cache → bundle)
   const [learnt, setLearnt] = useState({}); // taught bank → cardKey mappings
   const [teach, setTeach] = useState(null); // txn → "which card was this?" sheet
@@ -512,7 +513,7 @@ export default function App() {
   // card last4 for swipe spends, bank name for UPI credit-line spends.
   const matchedFor = (t) =>
     t.cardLast4
-      ? wallet.find((w) => w.last4 && w.last4 === t.cardLast4)
+      ? wallet.find((w) => w.last4 && w.last4.trim() === t.cardLast4.trim())
       : upiCardFor(t);
 
   const actionFor = (cat) =>
@@ -537,7 +538,7 @@ export default function App() {
     }
   };
 
-  const readSms = async () => {
+  const readSms = async (sinceMs) => {
     if (Platform.OS !== 'android') {
       setStatus('SMS read is Android-only.');
       return;
@@ -556,20 +557,16 @@ export default function App() {
         setStatus('Permission denied. Grant SMS access in settings.');
         return;
       }
-      const messages = await SmsReader.readSms(Date.now() - 30 * 24 * 3600 * 1000);
+      const cutoff = sinceMs ?? Date.now() - THIRTY_DAYS_MS;
+      const messages = await SmsReader.readSms(cutoff);
       const parsed = messages
         .map((m) => ({ ...parseSms(m.sender, m.body), date: m.date, raw: m.body }))
         .filter((t) => t.amount != null);
-      setBatch((b) => b + 1); // remount rows → re-stagger
-      setTxns(parsed);
-      // Persist so the nightly task can append on top of these, and the
-      // marker skips already-seen SMS next scan.
-      AsyncStorage.setItem('card-sage:txns', JSON.stringify(parsed));
-      const latest = messages.length
-        ? Math.max(...messages.map((m) => new Date(m.date).getTime()))
-        : 0;
-      AsyncStorage.setItem('card-sage:sms-marker', String(latest));
-      setStatus(`Parsed ${parsed.length} card transactions from ${messages.length} messages.`);
+      const existing = await loadTxns();
+      const merged = await mergeAndPurge(existing, parsed);
+      setBatch((b) => b + 1);
+      setTxns(merged);
+      setStatus(`Parsed ${parsed.length} new transactions (${merged.length} total).`);
     } catch (e) {
       setStatus('Error: ' + e.message);
     } finally {
@@ -584,13 +581,16 @@ export default function App() {
   useEffect(() => {
     if (wallet.length && !autoScanned.current) {
       autoScanned.current = true;
-      readSms();
+      readSms(); // first run = full 30d window
     }
   }, [wallet.length]);
 
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active' && wallet.length && autoScanned.current) readSms();
+    const sub = AppState.addEventListener('change', async (s) => {
+      if (s === 'active' && wallet.length && autoScanned.current) {
+        const lastMax = await getLastProcessedMaxDate();
+        readSms(lastMax && lastMax <= Date.now() ? lastMax : undefined);
+      }
     });
     return () => sub.remove();
   }, [wallet.length]);
@@ -825,6 +825,8 @@ export default function App() {
         />
       ) : tab === 'portals' ? (
         <PortalsPage c={c} styles={styles} wallet={wallet} spent={spent} cards={cards} openPicker={openPicker} />
+      ) : tab === 'settings' ? (
+        <SettingsPage c={c} styles={styles} CUR_VERSION={CUR_VERSION} onCheckUpdate={checkUpdate} onDownloadInstall={downloadAndInstallApk} update={update} setUpdate={setUpdate} setStatus={setStatus} />
       ) : (
         <View style={{ flex: 1 }}>
       <View style={styles.header}>
@@ -1013,14 +1015,32 @@ export default function App() {
       </View>
       )}
       {update ? (
-        <Pressable
-          onPress={() => Linking.openURL(update.url)}
-          style={{ backgroundColor: c.earn, margin: 10, marginBottom: 0, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10 }}
-        >
-          <Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>
-            ⬇ Update {update.tag.replace(/^v/, '')} available — tap to download
-          </Text>
-        </Pressable>
+        <View style={{ margin: 10, marginBottom: 0 }}>
+          {dlProgress == null ? (
+            <Pressable
+              onPress={async () => {
+                setDlProgress(0);
+                try {
+                  await downloadAndInstallApk(update.url, setDlProgress);
+                } catch (e) {
+                  setStatus('Update failed: ' + e.message);
+                  setDlProgress(null);
+                }
+              }}
+              style={{ backgroundColor: c.earn, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10 }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>
+                ⬇ Update {update.tag.replace(/^v/, '')} available — tap to download & install
+              </Text>
+            </Pressable>
+          ) : (
+            <View style={{ backgroundColor: c.earn, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10 }}>
+              <Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>
+                Downloading… {Math.round(dlProgress * 100)}%
+              </Text>
+            </View>
+          )}
+        </View>
       ) : null}
       <Dock tab={tab} setTab={setTab} c={c} styles={styles} />
 
@@ -1532,11 +1552,61 @@ function CardsPage({ c, styles, wallet, cardUsage, openPicker, onRemove, earning
   );
 }
 
+function SettingsPage({ c, styles, CUR_VERSION, onCheckUpdate, onDownloadInstall, update, setUpdate, setStatus }) {
+  const [checking, setChecking] = useState(false);
+  const [lastCheck, setLastCheck] = useState(null);
+  const handleCheck = async () => {
+    setChecking(true);
+    try {
+      const u = await onCheckUpdate();
+      if (u) {
+        setUpdate(u);
+        setStatus(`Update ${u.tag} available`);
+      } else {
+        setStatus('No update available');
+      }
+      setLastCheck(new Date().toLocaleTimeString());
+    } catch (e) {
+      setStatus('Check failed: ' + e.message);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.header}>
+        <Logo title="SETTINGS" />
+        <Text style={styles.sub}>App version {CUR_VERSION}</Text>
+      </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Updates</Text>
+        <View style={styles.row}>
+          <Pressable style={[styles.btn, { backgroundColor: c.earn }]} onPress={handleCheck} disabled={checking}>
+            <Text style={styles.btnText}>{checking ? 'Checking…' : 'Check for updates'}</Text>
+          </Pressable>
+          {lastCheck && <Text style={styles.meta}>Last checked: {lastCheck}</Text>}
+        </View>
+        {update ? (
+          <Text style={{ ...styles.meta, color: c.earn, marginTop: 8 }}>
+            {update.tag} ready — tap banner on Spends tab to download
+          </Text>
+        ) : null}
+      </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Data</Text>
+        <Text style={styles.meta}>SMS scans stored locally. No server, no analytics.</Text>
+      </View>
+    </View>
+  );
+}
+
 function Dock({ tab, setTab, c, styles }) {
   const tabs = [
     { id: 'spends', label: 'Spends' },
     { id: 'portals', label: 'Portals' },
     { id: 'cards', label: 'Cards' },
+    { id: 'settings', label: 'Settings' },
   ];
   return (
     <View style={styles.dock}>
@@ -1587,6 +1657,8 @@ const makeStyles = (c) =>
     btnText: { fontSize: 14, fontWeight: '700' },
     btnTextSmall: { fontSize: 12, fontWeight: '600' },
     status: { fontSize: 13, color: c.sub, marginTop: 8, marginBottom: 4 },
+    section: { marginTop: 20 },
+    sectionTitle: { fontSize: 13, fontWeight: '700', color: c.sub, marginBottom: 8, letterSpacing: 0.5 },
     row: { paddingVertical: 12 },
     rowTop: {
       flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline',

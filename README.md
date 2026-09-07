@@ -9,7 +9,7 @@ I built this because I kept losing track of which card paid for what. The app is
 ## What it does
 
 - Scans bank SMS (HDFC, ICICI, and any format it can parse) and turns each alert into a ledger row with merchant, amount, card used, and date
-- Recommends the best card for a category before you pay, from the app's portal screen, with the fee each payment app charges already factored in
+- Recommends the best card for a category before you pay, from the app's portal tab, with the fee each payment app charges already factored in
 - Tracks monthly cashback caps per card, per category, so a recommendation accounts for how much of the cap you've already spent
 - Dark and light themes, category filter chips, and a share-sheet entry point: send a payment confirmation to the app from any other app
 - Shows the last four digits of the card on each transaction so you know what you actually paid with
@@ -20,10 +20,10 @@ The SMS parsing happens entirely on the phone. Message text never leaves the dev
 
 ## Install
 
-Grab the latest `app-release.apk` from [Releases](https://github.com/tarun-sdb/card-sage/releases). The app is not on the Play Store, so Google Play Protect will show a warning on install because it does not recognize the signing key. Tap through it or install over ADB:
+Grab the latest per-ABI APK from [Releases](https://github.com/tarun-sdb/card-sage/releases) — for most phones that's `app-arm64-v8a-release.apk`. The app is not on the Play Store, so Google Play Protect will show a warning on install because it does not recognize the signing key. Tap through it or install over ADB:
 
 ```sh
-adb install -r app-release.apk
+adb install -r app-arm64-v8a-release.apk
 ```
 
 The app only needs SMS read permission, which it requests on first scan. On Android 15+ that permission can be revoked automatically for non-default SMS apps after 90 days; re-granting it from Settings is enough to restore scanning.
@@ -49,18 +49,18 @@ npm ci
 npx expo prebuild --platform android
 cd android
 ./gradlew assembleRelease        # gradlew.bat on Windows
-adb install app/build/outputs/apk/release/app-release.apk
+adb install app/build/outputs/apk/release/app-arm64-v8a-release.apk
 ```
 
 Engine tests:
 
 ```sh
-node --test test/
+node --test test/*.mjs
 ```
 
 ### Release process
 
-A release is a git tag. Pushing `vX.Y.Z` triggers the workflow in `.github/workflows/android-build.yml`, which generates the Android project, signs the APK, and attaches it to a GitHub Release. Bump the version in `apps/mobile/app.json` and `CUR_VERSION` in `apps/mobile/modules/updater.js` first; the app checks the latest release on launch and offers the update in a banner.
+A release is a git tag. Pushing `vX.Y.Z` triggers the workflow in `.github/workflows/android-build.yml`, which generates the Android project, signs the APK, and attaches it to a GitHub Release. Bump the version in `apps/mobile/app.json` first; the app reads its own version from the embedded config and checks the latest release on launch.
 
 ```sh
 git tag v1.0.2 && git push origin v1.0.2
@@ -70,6 +70,6 @@ The signing key is stored as a GitHub secret, so CI builds install over locally 
 
 ## Contributing
 
-Open an issue if the SMS parser mangles a bank's format or a recommendation looks wrong; both are data problems and small fixes. Pull requests are welcome, with the condition that `node --test test/` stays green. Keep the engine free of React imports so it stays testable.
+Open an issue if the SMS parser mangles a bank's format or a recommendation looks wrong; both are data problems and small fixes. Pull requests are welcome, with the condition that `node --test test/*.mjs` stays green. Keep the engine free of React imports so it stays testable.
 
 MIT
