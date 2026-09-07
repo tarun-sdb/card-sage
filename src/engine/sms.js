@@ -56,8 +56,15 @@ const SENDER_BANKS = [
 // to sender ID when the body names no bank.
 const BODY_BANK = /from\s+([A-Za-z][A-Za-z ]{2,30}?)\s+(?:A\/?c|account|card)/i;
 
+// Bill-payment alerts ("credit card bill ... paid via autopay"): money out,
+// but not a card swipe — earns nothing, pollutes ledger + scanned totals.
+export function isBillPayment(body) {
+  return /\b(?:credit card bill|card bill|bill pay|autopay)\b/i.test(body || '')
+    || (/\bbill\b/i.test(body || '') && /\bpaid\b/i.test(body || ''));
+}
+
 export function parseSms(sender, body) {
-  if (!body || OTP_WORDS.test(body)) return null;
+  if (!body || OTP_WORDS.test(body) || isBillPayment(body)) return null;
   if (!SPEND_WORDS.test(body)) return null;
   if (CREDIT_WORDS.test(body)) return null; // money-in: not a spend
   if (DECLINE_WORDS.test(body)) return null; // rejected txn: no money moved

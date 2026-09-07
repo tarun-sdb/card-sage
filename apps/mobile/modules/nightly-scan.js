@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isBillPayment } from '../../src/engine/sms';
 
 const TXNS_KEY = 'card-sage:txns';
 const LAST_MAX_DATE_KEY = 'card-sage:lastMaxDate';
@@ -36,8 +37,10 @@ function txnKey(t) {
 }
 
 export async function mergeAndPurge(existing, newTxns) {
-  const seen = new Set(existing.map(txnKey));
-  const merged = [...existing];
+  // One-time sweep: bill-payment rows stored before the parser gate.
+  const billed = (existing || []).filter((t) => !(t.raw && isBillPayment(t.raw)));
+  const seen = new Set(billed.map(txnKey));
+  const merged = [...billed];
   let newMax = 0;
   for (const t of newTxns) {
     const k = txnKey(t);
