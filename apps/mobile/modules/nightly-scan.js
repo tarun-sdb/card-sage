@@ -48,7 +48,11 @@ export async function mergeAndPurge(existing, newTxns) {
     if (t.date > newMax) newMax = t.date;
   }
   const cutoff = Date.now() - THIRTY_DAYS_MS;
-  const purged = merged.filter((t) => t.date >= cutoff);
+  // Ledger renders newest-first (rows slice + cap pools assume it).
+  // Incremental merges append — sort here so latest txns stay visible.
+  const purged = merged
+    .filter((t) => t.date >= cutoff)
+    .sort((a, b) => b.date - a.date);
   const now = Date.now();
   const maxDate = Math.max(...purged.map((t) => t.date), 0);
   await saveTxns(purged);
