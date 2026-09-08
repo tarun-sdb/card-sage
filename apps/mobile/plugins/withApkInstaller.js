@@ -1,6 +1,18 @@
-const { withAndroidManifest } = require('@expo/config-plugins');
+const { withAndroidManifest, withDangerousMod } = require('@expo/config-plugins');
+const fs = require('fs');
+const path = require('path');
 
 const FILE_PROVIDER_AUTHORITY = 'in.cardsage.app.fileprovider';
+
+// FileProvider paths must cover FileSystem.documentDirectory (filesDir).
+const FILE_PATHS_XML = `<?xml version="1.0" encoding="utf-8"?>
+<paths>
+  <files-path name="apk_downloads" path="apk_downloads/" />
+  <cache-path name="apk_downloads" path="apk_downloads/" />
+  <external-files-path name="apk_downloads" path="apk_downloads/" />
+  <external-cache-path name="apk_downloads" path="apk_downloads/" />
+</paths>`;
+
 
 module.exports = function withApkInstaller(config) {
   // Add FileProvider to AndroidManifest
@@ -44,6 +56,21 @@ module.exports = function withApkInstaller(config) {
 
     return config;
   });
+
+  // The manifest references @xml/apk_installer_file_paths — actually emit it,
+  // otherwise resource linking fails on clean prebuilds (CI).
+  config = withDangerousMod(config, [
+    'android',
+    (config) => {
+      const dir = path.join(
+        config.modRequest.platformProjectRoot,
+        'app/src/main/res/xml'
+      );
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'apk_installer_file_paths.xml'), FILE_PATHS_XML);
+      return config;
+    },
+  ]);
 
   return config;
 };
