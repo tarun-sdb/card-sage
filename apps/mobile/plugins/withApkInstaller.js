@@ -11,6 +11,9 @@ const FILE_PATHS_XML = `<?xml version="1.0" encoding="utf-8"?>
   <cache-path name="apk_downloads" path="apk_downloads/" />
   <external-files-path name="apk_downloads" path="apk_downloads/" />
   <external-cache-path name="apk_downloads" path="apk_downloads/" />
+  <!-- Canonical-path fallback: /data/data vs /data/user/0 differ per OEM.
+       Private provider (exported=false), per-intent grants only. -->
+  <root-path name="root" path="." />
 </paths>`;
 
 
