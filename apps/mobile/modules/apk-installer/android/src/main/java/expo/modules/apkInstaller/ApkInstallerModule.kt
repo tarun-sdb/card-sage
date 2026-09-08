@@ -14,11 +14,17 @@ class ApkInstallerModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("ApkInstaller")
 
-        AsyncFunction("installApk") { filePath: String ->
+        AsyncFunction("installApk") { fileUri: String ->
             val context = appContext.reactContext ?: return@AsyncFunction mapOf("success" to false, "error" to "No context")
-            val file = File(filePath)
+            // expo-file-system hands back a file:// URI — File needs the raw path.
+            val rawPath = try {
+                Uri.parse(fileUri).path ?: fileUri
+            } catch (_: Exception) {
+                fileUri
+            }
+            val file = File(rawPath)
             if (!file.exists()) {
-                return@AsyncFunction mapOf("success" to false, "error" to "File not found: $filePath")
+                return@AsyncFunction mapOf("success" to false, "error" to "File not found: $rawPath")
             }
 
             val authority = "${context.packageName}.fileprovider"
