@@ -5,7 +5,7 @@
 import Constants from 'expo-constants';
 import SmsReader from './sms-reader';
 import ApkInstaller from './apk-installer';
-import * as FileSystem from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 
 export const CUR_VERSION =
   Constants.expoConfig?.version || Constants.nativeApplicationVersion || '0.0.0';
@@ -51,37 +51,26 @@ export async function checkUpdate(timeoutMs = 6000) {
   }
 }
 
-const APK_DIR = `${FileSystem.documentDirectory}apk_downloads/`;
+const APK_DIR_NAME = 'apk_downloads';
 const APK_FILENAME = 'card-sage-update.apk';
 
 export async function downloadAndInstallApk(url, onProgress) {
-  // Ensure directory exists
-  await FileSystem.makeDirectoryAsync(APK_DIR, { intermediates: true });
-  const destPath = `${APK_DIR}${APK_FILENAME}`;
+  const dir = new Directory(Paths.document, APK_DIR_NAME);
+  dir.create({ idempotent: true });
+  const dest = new File(dir, APK_FILENAME);
+  if (dest.exists) dest.delete();
 
-  // Remove any existing file
-  await FileSystem.deleteAsync(destPath, { idempotent: true });
-
-  // Download with progress
-  const downloadResumable = FileSystem.createDownloadResumable(
-    url,
-    destPath,
-    {},
-    (res) => {
-      if (onProgress && res.totalBytesWritten && res.totalBytesExpectedToWrite) {
-        onProgress(res.totalBytesWritten / res.totalBytesExpectedToWrite);
+  const file = await File.downloadFileAsync(url, dest, {
+    idempotent: true,
+    onProgress: (p) => {
+      if (onProgress && p.totalBytes > 0) {
+        onProgress(p.bytesWritten / p.totalBytes);
       }
-    }
-  );
-
-  const result = await downloadResumable.downloadAsync();
-
-  if (!result || result.status !== 200) {
-    throw new Error(`Download failed: ${result?.status ?? 'unknown'}`);
-  }
+    },
+  });
 
   // Install via native module (FileProvider + ACTION_VIEW)
-  const installResult = await ApkInstaller.installApk(result.uri);
+  const installResult = await ApkInstaller.installApk(file.uri);
   if (!installResult.success) {
     throw new Error(installResult.error || 'Install failed');
   }
