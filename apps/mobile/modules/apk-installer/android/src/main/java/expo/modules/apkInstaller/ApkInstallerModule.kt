@@ -60,7 +60,7 @@ class ApkInstallerModule : Module() {
                 context.startActivity(intent)
                 mapOf("success" to true)
             } catch (e: Exception) {
-                mapOf("success" to false, "error" to e.message ?: "Install failed")
+                mapOf("success" to false, "error" to (e.message ?: "Install failed"))
             }
         }
     }
