@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { isBillPayment } from '../../src/engine/sms';
+import { isBillPayment } from '../../../src/engine/sms';
 
 const TXNS_KEY = 'card-sage:txns';
 const LAST_MAX_DATE_KEY = 'card-sage:lastMaxDate';
