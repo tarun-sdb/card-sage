@@ -1,7 +1,7 @@
 // Config plugin: emit per-ABI APKs (Play Store split delivery) on every
 // prebuild. ABI splits live here (not hand-edited gradle) so CI + local both
-// get them. universalApk keeps app-universal-release.apk for the in-app
-// updater URL (build-apk.bat copies it to app-release.apk).
+// get them. universalApk keeps app-universal-release.apk as the updater's
+// fallback when a per-ABI asset is missing from a release.
 const { withAppBuildGradle } = require('@expo/config-plugins');
 
 const SPLITS_BLOCK = `

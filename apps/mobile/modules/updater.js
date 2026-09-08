@@ -19,8 +19,9 @@ export const ABI = () => {
     return 'arm64-v8a';
   }
 };
+export const APK_NAME = () => `app-${ABI()}-release.apk`;
 export const APK_URL = () =>
-  `https://github.com/tarun-sdb/card-sage/releases/latest/download/app-${ABI()}-release.apk`;
+  `https://github.com/tarun-sdb/card-sage/releases/latest/download/${APK_NAME()}`;
 
 export async function checkUpdate(timeoutMs = 6000) {
   const ctl = new AbortController();
@@ -32,10 +33,16 @@ export async function checkUpdate(timeoutMs = 6000) {
     });
     if (!r.ok) return null;
     const j = await r.json();
+    // Resolve the real asset URL instead of guessing: exact per-ABI match,
+    // universal fallback, blind latest/download URL last (may 404).
+    const assets = Array.isArray(j.assets) ? j.assets : [];
+    const byName = (n) => assets.find((a) => a.name === n)?.browser_download_url || null;
+    const url =
+      byName(APK_NAME()) || byName('app-universal-release.apk') || APK_URL();
     return {
       tag: j.tag_name,
       version: j.tag_name.replace(/^v/, ''),
-      url: APK_URL(),
+      url,
     };
   } catch {
     return null;
