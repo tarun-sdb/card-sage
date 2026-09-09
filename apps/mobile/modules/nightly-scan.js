@@ -4,6 +4,7 @@ import { isBillPayment } from '../../../src/engine/sms';
 const TXNS_KEY = 'card-sage:txns';
 const LAST_MAX_DATE_KEY = 'card-sage:lastMaxDate';
 const SCAN_META_KEY = 'card-sage:scanMeta';
+const HIDDEN_KEY = 'card-sage:hidden';
 const LEARNT_KEY = 'card-sage:learnt';
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -50,6 +51,23 @@ export async function saveScanMeta(meta) {
 
 function txnKey(t) {
   return `${t.date}|${t.amount}|${t.cardLast4}|${t.merchant}`;
+}
+
+export { txnKey };
+
+// User-hidden wrong parses (thumbs-down): keys persist, filtered on every
+// load/merge so rescans can't resurrect them.
+export async function loadHidden() {
+  try {
+    const raw = await AsyncStorage.getItem(HIDDEN_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveHidden(keys) {
+  return AsyncStorage.setItem(HIDDEN_KEY, JSON.stringify(keys)).catch(() => {});
 }
 
 export async function mergeAndPurge(existing, newTxns) {

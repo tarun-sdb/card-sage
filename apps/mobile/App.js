@@ -12,7 +12,7 @@ import { recommend, rewardFor, spentKey } from '../../src/engine/recommend';
 import { parseSms, cardsForBank } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
-import { loadTxns, loadLearnt, saveLearnt, mergeAndPurge, getLastProcessedMaxDate, getScanMeta, saveScanMeta, THIRTY_DAYS_MS } from './modules/nightly-scan';
+import { loadTxns, loadLearnt, saveLearnt, mergeAndPurge, getLastProcessedMaxDate, getScanMeta, saveScanMeta, loadHidden, saveHidden, txnKey, THIRTY_DAYS_MS } from './modules/nightly-scan';
 import ShareReceiver from './modules/share-receiver';
 import { checkUpdate, CUR_VERSION, downloadAndInstallApk } from './modules/updater';
 import { loadCards } from './modules/card-data';
@@ -358,6 +358,7 @@ export default function App() {
   const [cards, setCards] = useState(null); // reward dataset (remote → cache → bundle)
   const [learnt, setLearnt] = useState({}); // taught bank → cardKey mappings
   const [scanMeta, setScanMeta] = useState(null); // { asOf, ok } — ledger freshness stamp
+  const [hiddenKeys, setHiddenKeys] = useState([]); // user-hidden wrong parses
   const [teach, setTeach] = useState(null); // txn → "which card was this?" sheet
 
   // First run: load saved theme, then open the onboarding picker if it's new.
@@ -411,11 +412,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Restore whatever the last scan persisted.
-    loadTxns().then((saved) => {
-      if (saved.length) {
-        setTxns(saved);
-        setStatus(`${saved.length} transactions auto-scanned.`);
+    // Restore whatever the last scan persisted (minus user-hidden rows).
+    Promise.all([loadTxns(), loadHidden()]).then(([saved, hidden]) => {
+      setHiddenKeys(hidden);
+      const visible = saved.filter((t) => !hidden.includes(txnKey(t)));
+      if (visible.length) {
+        setTxns(visible);
+        setStatus(`${visible.length} transactions auto-scanned.`);
       }
     });
     getScanMeta().then(setScanMeta);
@@ -464,6 +467,16 @@ export default function App() {
     setLearnt(next);
     saveLearnt(next);
     setTeach(null);
+  };
+
+  // Thumbs-down: drop the wrong parse locally so rescans can't resurrect it.
+  const hideTxn = async (t) => {
+    if (!t) return;
+    const k = txnKey(t);
+    const next = [...hiddenKeys, k];
+    setHiddenKeys(next);
+    setTxns((txs) => txs.filter((x) => txnKey(x) !== k));
+    await saveHidden(next);
   };
 
   // Cards page removal — picker is add-only now.
@@ -565,7 +578,11 @@ export default function App() {
         .map((m) => ({ ...parseSms(m.sender, m.body), date: m.date, raw: m.body }))
         .filter((t) => t.amount != null);
       const existing = await loadTxns();
-      const merged = await mergeAndPurge(existing, parsed);
+      const hidden = await loadHidden();
+      setHiddenKeys(hidden);
+      const merged = (await mergeAndPurge(existing, parsed)).filter(
+        (t) => !hidden.includes(txnKey(t))
+      );
       setBatch((b) => b + 1);
       setTxns(merged);
       const meta = { asOf: Date.now(), ok: true };
@@ -1184,8 +1201,8 @@ export default function App() {
             </View>
             <Text style={styles.status}>
               Found ₹{inspect.amount.toLocaleString('en-IN')} · {inspect.merchant || 'UPI'} ·{' '}
-              {merchantCategory(inspect.merchant) || 'unmapped'}. Wrong? Tap thumbs-down — the
-              SMS text is shared back to us for fixing.
+              {merchantCategory(inspect.merchant) || 'unmapped'}. Wrong? Tap thumbs-down —
+              hides it here and shares the SMS to report it.
             </Text>
             <View style={{ gap: 10, marginTop: 20 }}>
               <Btn
@@ -1198,6 +1215,7 @@ export default function App() {
                 title="👎 Not right"
                 color={c.danger}
                 onPress={() => {
+                  hideTxn(inspect);
                   setInspect(null);
                   Share.share({
                     message: `[CardSage ✗] ${inspect.sender} ${new Date(inspect.date).toISOString()}\n${inspect.raw}\n→ ₹${inspect.amount} · ${inspect.merchant || 'UPI'} · ${merchantCategory(inspect.merchant) || 'unmapped'}`,
