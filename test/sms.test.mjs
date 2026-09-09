@@ -54,5 +54,10 @@ check(
   t("AX-KR2GO1-P", "Dear Customer, loan up to Rs.40,000*. Credit to your Bank A/c on 07.09.2026. Check eligibility: http://go3.in/KR2GO1/Ty1Xvf Kredito24"),
   null
 );
+check(
+  "promo coupon spam dropped",
+  t("VA-onTIRA-S", "ALERT: Upto Rs.1100 off credited Valid only for 6 hours! Use code EXTRAPAY on Tira: promotions.tirabeauty.com/LJ3AAZA"),
+  null
+);
 
 process.exit(fail ? 1 : 0);

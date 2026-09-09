@@ -47,6 +47,11 @@ const MANDATE_WORDS = /\b(?:upi[\s-]?mandate|collect request|blocking of funds|i
 // ("loan ... disbursed/credited", exact amount, no eligibility link) pass.
 const LOAN_OFFER_WORDS = /\bloan up to\b|\bcheck eligibility\b/i;
 
+// Promo/coupon spam ("Upto Rs.1100 off credited! Use code EXTRAPAY"):
+// "credited"/"off" trip money gates but it's a discount, not money.
+// Genuine cashback ("cashback of Rs.X credited", no code/validity) passes.
+const PROMO_WORDS = /\buse code\b|\bvalid only for\b|\bpromocode\b/i;
+
 // Sender-ID → bank/issuer name. UPI credit lines (slice, super.money) send
 // from their own ID; banks send their shortcode. Order matters: longest first.
 const SENDER_BANKS = [
@@ -74,7 +79,7 @@ export function isBillPayment(body) {
 }
 
 export function parseSms(sender, body) {
-  if (!body || OTP_WORDS.test(body) || MANDATE_WORDS.test(body) || LOAN_OFFER_WORDS.test(body) || isBillPayment(body)) return null;
+  if (!body || OTP_WORDS.test(body) || MANDATE_WORDS.test(body) || LOAN_OFFER_WORDS.test(body) || PROMO_WORDS.test(body) || isBillPayment(body)) return null;
   // Money-in (salary, UPI received, refunds): no spend word present, but
   // CREDIT_WORDS admits them. Direction tags the row; App skips 'in' for
   // caps/rewards but shows it in the ledger + monthly totals.
