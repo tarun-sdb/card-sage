@@ -1597,17 +1597,17 @@ function SettingsPage({ c, styles, CUR_VERSION, onCheckUpdate, onDownloadInstall
           <Pressable style={[styles.btn, { backgroundColor: c.earn }]} onPress={handleCheck} disabled={checking}>
             <Text style={styles.btnText}>{checking ? 'Checking…' : 'Check for updates'}</Text>
           </Pressable>
-          {lastCheck && <Text style={styles.meta}>Last checked: {lastCheck}</Text>}
+          {lastCheck && <Text style={[styles.meta, { flex: 0 }]}>Last checked: {lastCheck}</Text>}
         </View>
         {update ? (
-          <Text style={{ ...styles.meta, color: c.earn, marginTop: 8 }}>
+          <Text style={{ ...styles.meta, flex: 0, color: c.earn, marginTop: 8 }}>
             {update.tag} ready — tap banner on Spends tab to download
           </Text>
         ) : null}
       </View>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Data</Text>
-        <Text style={styles.meta}>SMS scans stored locally. No server, no analytics.</Text>
+        <Text style={[styles.meta, { flex: 0 }]}>SMS scans stored locally. No server, no analytics.</Text>
       </View>
     </View>
   );
