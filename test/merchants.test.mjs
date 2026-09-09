@@ -23,4 +23,23 @@ check("gyftr prefix ref", merchantCategory("GYFTRSM12139725"), "ONLINE_SHOPPING"
 check("airtel word wins over channel", merchantCategory("AIRTEL"), "UTILITY_BILLS");
 check("upi stays null", merchantCategory("UPI"), null);
 
+// Research-backed expansion (2026-09-08): inferred bank-descriptor patterns.
+check("cred bill pay", merchantCategory("CRED"), "UTILITY_BILLS");
+check("cred via phrase", merchantCategory("PAID VIA CRED"), "UTILITY_BILLS");
+check("credit mentions unaffected", merchantCategory("CREDIT CARD"), "ONLINE_SHOPPING");
+check("tatacliq glued", merchantCategory("TATACLIQ"), "ONLINE_SHOPPING");
+check("tata cliq spaced", merchantCategory("TATA CLIQ"), "ONLINE_SHOPPING");
+check("shoppers stop", merchantCategory("SHOPPERS STOP"), "ONLINE_SHOPPING");
+check("shoppersstop glued", merchantCategory("SHOPPERSSTOP"), "ONLINE_SHOPPING");
+check("delhivery", merchantCategory("DELHIVERY"), "UTILITY_BILLS");
+check("airtel payments bank", merchantCategory("AIRTEL PAYMENTS BANK"), "UTILITY_BILLS");
+check("airtel pb", merchantCategory("AIRTEL PB"), "UTILITY_BILLS");
+check("auto debit", merchantCategory("AUTO DEBIT"), "UTILITY_BILLS");
+check("autodebit glued", merchantCategory("AUTODEBIT"), "UTILITY_BILLS");
+check("emi", merchantCategory("EMI"), "UTILITY_BILLS");
+check("emi inside merchant keeps merchant", merchantCategory("NO COST EMI AT AMAZON"), "ONLINE_SHOPPING");
+check("premium not emi", merchantCategory("PREMIUM"), "ONLINE_SHOPPING");
+check("blinkit glued ref", merchantCategory("BLINKIT12345"), "GROCERY");
+check("bigbasket ref", merchantCategory("BIGBASKET99"), "GROCERY");
+
 process.exit(fail ? 1 : 0);

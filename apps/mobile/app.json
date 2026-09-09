@@ -2,7 +2,7 @@
   "expo": {
     "name": "Card Sage",
     "slug": "card-sage",
-    "version": "1.0.13",
+    "version": "1.0.14",
     "plugins": [
       "./plugins/withShareIntent",
       "./plugins/withAbiSplits",
