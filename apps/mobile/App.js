@@ -539,7 +539,9 @@ export default function App() {
         : UPI_ACTION;
 
   // Add one txn's reward to a cap pool (shared by month/cumulative memos).
+  // Money-in never depletes caps.
   const fillPool = (pool, t) => {
+    if (t.direction === 'in') return;
     const action = actionFor(merchantCategory(t.merchant));
     if (!action) return;
     const app = action.apps[0];
@@ -695,6 +697,11 @@ export default function App() {
       hintByBank.set(t.bank, top);
     }
     return txns.slice(0, 30).map((t, i) => {
+      // Money-in (salary, UPI received, refunds): visible ledger row, no
+      // picks — never matched, never depletes caps.
+      if (t.direction === 'in') {
+        return { t, cat: 'CREDIT', upi: false, matched: null, top: null, best: null, excluded: null, hint: null };
+      }
       const cat = merchantCategory(t.merchant);
       const action = actionFor(cat);
       // WALLET has no action (wallet loads earn nothing) — keep the row, skip the math.
@@ -741,19 +748,26 @@ export default function App() {
     });
     return [...byMonth].map(([title, data]) => ({
       title,
-      total: data.reduce((s, r) => s + r.t.amount, 0),
+      total: data.reduce((s, r) => s + (r.t.direction === 'in' ? 0 : r.t.amount), 0),
+      received: data.reduce((s, r) => s + (r.t.direction === 'in' ? r.t.amount : 0), 0),
       data: collapsed[title] ? [] : data,
     }));
   }, [rows, collapsed, catFilter]);
 
   // Header: potential cashback from card-matched rows only, bounded by
   // remaining cap. Labeled "potential" — SMS batch is not a statement.
+  // Spent vs received split: money-in never earns, never depletes.
   const summary = useMemo(() => {
-    let scanned = 0;
+    let spentAmt = 0;
+    let received = 0;
     let potential = 0;
     for (const t of txns) {
       if (!isCurrentMonth(t.date)) continue; // caps reset monthly
-      scanned += t.amount;
+      if (t.direction === 'in') {
+        received += t.amount;
+        continue;
+      }
+      spentAmt += t.amount;
       const matched = matchedFor(t);
       if (!matched) continue;
       const action = actionFor(merchantCategory(t.merchant));
@@ -764,7 +778,7 @@ export default function App() {
       const remaining = cap != null ? Math.max(0, cap - (spent[key] || 0)) : Infinity;
       potential += Math.min((r.ratePct / 100) * t.amount, remaining);
     }
-    return { scanned, potential, n: txns.length };
+    return { scanned: spentAmt, received, potential, n: txns.length };
   }, [txns, wallet, spent]);
 
   const count = Object.keys(selected).filter((k) => selected[k]).length;
@@ -780,6 +794,7 @@ export default function App() {
         const rows = cards.map((card) => ({ card, total: 0, byCat: {} }));
         for (const t of txns) {
           if (!isCurrentMonth(t.date)) continue;
+          if (t.direction === 'in') continue; // money-in earns nothing
           const action = actionFor(merchantCategory(t.merchant));
           if (!action) continue;
           const app = action.apps[0];
@@ -859,7 +874,8 @@ export default function App() {
         <Logo title="CARD SAGE" />
         <Text style={styles.sub}>
           {wallet.length ? wallet.length + ' cards' : 'no cards'} · {summary.n} txns ·{' '}
-          ₹{summary.scanned.toLocaleString('en-IN')} scanned
+          ₹{summary.scanned.toLocaleString('en-IN')} spent
+          {summary.received > 0 ? ` · ₹${summary.received.toLocaleString('en-IN')} in` : ''}
           {scanMeta?.asOf
             ? ` · as of ${new Date(scanMeta.asOf).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}${scanMeta.ok === false ? ' (refresh failed)' : ''}`
             : ''}
@@ -921,7 +937,10 @@ export default function App() {
             onPress={() => setCollapsed((c) => ({ ...c, [section.title]: !c[section.title] }))}
           >
             <Text style={styles.monthTitle}>{section.title}</Text>
-            <Text style={styles.monthTotal}>₹{section.total.toLocaleString('en-IN')} scanned</Text>
+            <Text style={styles.monthTotal}>
+              ₹{section.total.toLocaleString('en-IN')} spent
+              {section.received > 0 ? ` · ₹${section.received.toLocaleString('en-IN')} in` : ''}
+            </Text>
             <Text style={styles.monthChevron}>
               {collapsed[section.title] ? '▸' : '▾'}
             </Text>
@@ -980,6 +999,20 @@ export default function App() {
               );
             }
             // Unmappable (UPI person pays) or no reward row — quiet, honest.
+            // Money-in rows: green received chip, no picks.
+            if (item.t.direction === 'in') {
+              return (
+                <View style={styles.metaRow}>
+                  <Text style={styles.meta}>
+                    {item.t.bank || item.t.sender || 'Received'}
+                    {item.t.cardLast4 ? ' · ' + item.t.cardLast4 : ''}
+                  </Text>
+                  <Chip color={c.earn} onPress={() => setInspect(item.t)}>
+                    ↓ received
+                  </Chip>
+                </View>
+              );
+            }
             return (
               <View style={styles.metaRow}>
                 <Text style={styles.meta}>
@@ -1006,9 +1039,13 @@ export default function App() {
               <Pressable style={styles.row} onPress={() => setInspect(item.t)}>
                 <View style={styles.rowTop}>
                   <Text style={styles.merchant} numberOfLines={1}>
-                    {item.t.merchant || (item.t.cardLast4 ? 'Unknown merchant' : 'UPI')}
+                    {item.t.direction === 'in'
+                      ? item.t.bank || item.t.sender || 'Received'
+                      : item.t.merchant || (item.t.cardLast4 ? 'Unknown merchant' : 'UPI')}
                   </Text>
-                  <Text style={styles.amt}>₹{item.t.amount.toLocaleString('en-IN')}</Text>
+                  <Text style={styles.amt}>
+                    {item.t.direction === 'in' ? '+' : ''}₹{item.t.amount.toLocaleString('en-IN')}
+                  </Text>
                 </View>
                 {verdict}
               </Pressable>

@@ -27,7 +27,7 @@ check(
 check(
   "hdfc card spend",
   t("AD-HDFCBK-S", "Spent Rs.4000 From HDFC Bank Card x1665 At PAYZAPPW7495373 On 2026-08-16:22:07:20 Bal Rs.4235.84"),
-  { sender: "AD-HDFCBK-S", amount: 4000, cardLast4: "1665", merchant: "PAYZAPPW7495373", bank: "HDFC BANK" }
+  { sender: "AD-HDFCBK-S", amount: 4000, direction: "out", cardLast4: "1665", merchant: "PAYZAPPW7495373", bank: "HDFC BANK" }
 );
 check(
   "bank recharge alert kept",
@@ -40,9 +40,9 @@ check(
   null
 );
 check(
-  "credit alert rejected",
+  "credit alert parsed as money-in",
   t("AD-HDFCBK-S", "Rs.1000 credited to your account. Txn ID 1234"),
-  null
+  { sender: "AD-HDFCBK-S", amount: 1000, direction: "in", cardLast4: null, merchant: "YOUR ACCOUNT.", bank: "HDFC" }
 );
 
 process.exit(fail ? 1 : 0);

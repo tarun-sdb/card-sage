@@ -65,8 +65,11 @@ export function isBillPayment(body) {
 
 export function parseSms(sender, body) {
   if (!body || OTP_WORDS.test(body) || isBillPayment(body)) return null;
-  if (!SPEND_WORDS.test(body)) return null;
-  if (CREDIT_WORDS.test(body)) return null; // money-in: not a spend
+  // Money-in (salary, UPI received, refunds): no spend word present, but
+  // CREDIT_WORDS admits them. Direction tags the row; App skips 'in' for
+  // caps/rewards but shows it in the ledger + monthly totals.
+  const isCredit = CREDIT_WORDS.test(body);
+  if (!isCredit && !SPEND_WORDS.test(body)) return null;
   if (DECLINE_WORDS.test(body)) return null; // rejected txn: no money moved
 
 const amount = body.match(AMOUNT);
@@ -86,6 +89,7 @@ const amount = body.match(AMOUNT);
   return {
     sender: sender || "",
     amount: parseFloat(amount[1].replace(/,/g, "")),
+    direction: isCredit ? "in" : "out",
     cardLast4: card ? card[1] : null,
     // UPI person-pay, then recharge alerts, then merchant, then phone-number
     // pays ("to 9876543210") which are UPI too.
