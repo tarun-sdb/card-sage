@@ -37,6 +37,11 @@ const DECLINE_WORDS = /(?:declined|failed|unsuccessful|not completed|rejected|in
 // money moved. Skip before SPEND_WORDS can claim them.
 const OTP_WORDS = /otp|one[- ]?time password/i;
 
+// Mandate/collect-request alerts (IPO, UPI autopay setup): "received" refers
+// to the REQUEST, not money. No funds move — drop like OTPs, otherwise the
+// run-on body also yields a garbage merchant + wrong ONLINE_SHOPPING row.
+const MANDATE_WORDS = /\b(?:upi[\s-]?mandate|collect request|blocking of funds|ipo|mandate)\b/i;
+
 // Sender-ID → bank/issuer name. UPI credit lines (slice, super.money) send
 // from their own ID; banks send their shortcode. Order matters: longest first.
 const SENDER_BANKS = [
@@ -64,7 +69,7 @@ export function isBillPayment(body) {
 }
 
 export function parseSms(sender, body) {
-  if (!body || OTP_WORDS.test(body) || isBillPayment(body)) return null;
+  if (!body || OTP_WORDS.test(body) || MANDATE_WORDS.test(body) || isBillPayment(body)) return null;
   // Money-in (salary, UPI received, refunds): no spend word present, but
   // CREDIT_WORDS admits them. Direction tags the row; App skips 'in' for
   // caps/rewards but shows it in the ledger + monthly totals.

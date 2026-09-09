@@ -44,5 +44,10 @@ check(
   t("AD-HDFCBK-S", "Rs.1000 credited to your account. Txn ID 1234"),
   { sender: "AD-HDFCBK-S", amount: 1000, direction: "in", cardLast4: null, merchant: "YOUR ACCOUNT.", bank: "HDFC" }
 );
+check(
+  "ipo mandate collect request dropped",
+  t("VM-NSEIPO-S", "Dear CCWXXXXX3C IPO Pranav Constructions Limited : App no DHNPRANA128582 UPI ID sbchandranji@okicici for Rs 14880.00 received. Please check for UPI-Mandate collect request for blocking of funds- NSEIL"),
+  null
+);
 
 process.exit(fail ? 1 : 0);
