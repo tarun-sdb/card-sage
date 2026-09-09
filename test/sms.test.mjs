@@ -49,5 +49,10 @@ check(
   t("VM-NSEIPO-S", "Dear CCWXXXXX3C IPO Pranav Constructions Limited : App no DHNPRANA128582 UPI ID sbchandranji@okicici for Rs 14880.00 received. Please check for UPI-Mandate collect request for blocking of funds- NSEIL"),
   null
 );
+check(
+  "loan offer spam dropped",
+  t("AX-KR2GO1-P", "Dear Customer, loan up to Rs.40,000*. Credit to your Bank A/c on 07.09.2026. Check eligibility: http://go3.in/KR2GO1/Ty1Xvf Kredito24"),
+  null
+);
 
 process.exit(fail ? 1 : 0);
