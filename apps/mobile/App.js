@@ -1087,7 +1087,7 @@ export default function App() {
 />
             <View style={{ marginTop: 16, alignSelf: 'flex-start' }}>
               {wallet.length ? (
-                <Btn title="📩 Scan SMS" color={c.earn} primary onPress={readSms} />
+                <Btn title="＋ Add your cards" color={c.earn} primary onPress={openPicker} />
               ) : (
                 <Btn title="＋ Add your cards" color={c.earn} primary onPress={openPicker} />
               )}
@@ -1687,6 +1687,20 @@ function SettingsPage({ c, styles, CUR_VERSION, onCheckUpdate, onDownloadInstall
     }
   };
 
+  const doFullRescan = async () => {
+    try {
+      setBusy(true);
+      setStatus('Full rescan…');
+      await AsyncStorage.removeItem('card-sage:lastMaxDate');
+      await readSms(undefined);
+      setStatus('Full rescan done.');
+    } catch (e) {
+      setStatus('Rescan failed: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const doRestore = async () => {
     try {
       const data = JSON.parse(restoreJson);
@@ -1734,6 +1748,9 @@ function SettingsPage({ c, styles, CUR_VERSION, onCheckUpdate, onDownloadInstall
           </Pressable>
           <Pressable style={[styles.btn, { backgroundColor: c.earn }]} onPress={() => setRestoreOpen(true)}>
             <Text style={styles.btnText}>📥 Restore</Text>
+          </Pressable>
+          <Pressable style={[styles.btn, { backgroundColor: c.warn }]} onPress={doFullRescan} disabled={busy}>
+            <Text style={styles.btnText}>🔄 Full rescan</Text>
           </Pressable>
         </View>
       </View>
