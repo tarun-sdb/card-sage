@@ -746,12 +746,23 @@ export default function App() {
       if (!byMonth.has(title)) byMonth.set(title, []);
       byMonth.get(title).push({ ...r, i });
     });
-    return [...byMonth].map(([title, data]) => ({
-      title,
-      total: data.reduce((s, r) => s + (r.t.direction === 'in' ? 0 : r.t.amount), 0),
-      received: data.reduce((s, r) => s + (r.t.direction === 'in' ? r.t.amount : 0), 0),
-      data: collapsed[title] ? [] : data,
-    }));
+    return [...byMonth].map(([title, data]) => {
+      // Per-category totals for this month
+      const byCat = new Map();
+      for (const r of data) {
+        if (r.t.direction === 'in') continue;
+        const cat = merchantCategory(r.t.merchant) || 'other';
+        byCat.set(cat, (byCat.get(cat) || 0) + r.t.amount);
+      }
+      const catList = [...byCat].sort((a, b) => b[1] - a[1]);
+      return {
+        title,
+        total: data.reduce((s, r) => s + (r.t.direction === 'in' ? 0 : r.t.amount), 0),
+        received: data.reduce((s, r) => s + (r.t.direction === 'in' ? r.t.amount : 0), 0),
+        byCat: catList,
+        data: collapsed[title] ? [] : data,
+      };
+    });
   }, [rows, collapsed, catFilter]);
 
   // Header: potential cashback from card-matched rows only, bounded by
@@ -941,6 +952,13 @@ export default function App() {
               ₹{section.total.toLocaleString('en-IN')} spent
               {section.received > 0 ? ` · ₹${section.received.toLocaleString('en-IN')} in` : ''}
             </Text>
+            {section.byCat && section.byCat.length > 0 && (
+              <Text style={styles.monthCats}>
+                {section.byCat.slice(0, 3).map(([cat, amt]) =>
+                  `${humanize(cat)} ₹${amt.toLocaleString('en-IN')}`
+                ).join(' · ')}
+              </Text>
+            )}
             <Text style={styles.monthChevron}>
               {collapsed[section.title] ? '▸' : '▾'}
             </Text>
@@ -1837,6 +1855,7 @@ const makeStyles = (c) =>
       textTransform: 'uppercase', color: c.earn,
     },
     monthTotal: { fontSize: 11, color: c.sub },
+    monthCats: { fontSize: 10, color: c.sub, marginTop: 2, flexWrap: 'wrap' },
     monthChevron: { fontSize: 11, color: c.sub, marginLeft: 'auto' },
     pickerContainer: { flex: 1, backgroundColor: c.bg, padding: 20, paddingTop: 60 },
     search: {
