@@ -12,7 +12,7 @@ import { recommend, rewardFor, spentKey } from '../../src/engine/recommend';
 import { parseSms, cardsForBank } from '../../src/engine/sms';
 import { merchantCategory } from '../../src/engine/merchants';
 import SmsReader from './modules/sms-reader';
-import { loadTxns, loadLearnt, saveLearnt, mergeAndPurge, getLastProcessedMaxDate, getScanMeta, saveScanMeta, loadHidden, saveHidden, txnKey, THIRTY_DAYS_MS } from './modules/nightly-scan';
+import { loadTxns, saveTxns, loadLearnt, saveLearnt, mergeAndPurge, getLastProcessedMaxDate, getScanMeta, saveScanMeta, loadHidden, saveHidden, txnKey, THIRTY_DAYS_MS } from './modules/nightly-scan';
 import ShareReceiver from './modules/share-receiver';
 import { checkUpdate, CUR_VERSION, downloadAndInstallApk } from './modules/updater';
 import { loadCards } from './modules/card-data';
@@ -1640,6 +1640,53 @@ function SettingsPage({ c, styles, CUR_VERSION, onCheckUpdate, onDownloadInstall
     }
   };
 
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoreJson, setRestoreJson] = useState('');
+
+  const doBackup = async () => {
+    try {
+      const [walletRaw, txns, hidden, learnt] = await Promise.all([
+        AsyncStorage.getItem(WALLET_KEY),
+        loadTxns(),
+        loadHidden(),
+        loadLearnt(),
+      ]);
+      const backup = {
+        version: 1,
+        wallet: walletRaw ? JSON.parse(walletRaw) : [],
+        txns,
+        hidden,
+        learnt,
+        exportedAt: Date.now(),
+      };
+      await Share.share({
+        message: JSON.stringify(backup, null, 2),
+        title: 'CardSage Backup',
+      });
+      setStatus('Backup ready — save the file.');
+    } catch (e) {
+      setStatus('Backup failed: ' + e.message);
+    }
+  };
+
+  const doRestore = async () => {
+    try {
+      const data = JSON.parse(restoreJson);
+      if (!data.version || !data.wallet || !data.txns) throw new Error('Invalid backup format');
+      await Promise.all([
+        AsyncStorage.setItem(WALLET_KEY, JSON.stringify(data.wallet)),
+        saveTxns(data.txns),
+        saveHidden(data.hidden || []),
+        saveLearnt(data.learnt || {}),
+      ]);
+      setRestoreJson('');
+      setRestoreOpen(false);
+      setStatus('Restored — restart app to reload.');
+    } catch (e) {
+      setStatus('Restore failed: ' + e.message);
+    }
+  };
+
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.header}>
@@ -1663,7 +1710,39 @@ function SettingsPage({ c, styles, CUR_VERSION, onCheckUpdate, onDownloadInstall
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Data</Text>
         <Text style={[styles.meta, { flex: 0 }]}>SMS scans stored locally. No server, no analytics.</Text>
+        <View style={styles.row} style={{ marginTop: 12, gap: 10 }}>
+          <Pressable style={[styles.btn, { backgroundColor: c.muted }]} onPress={doBackup}>
+            <Text style={styles.btnText}>💾 Backup</Text>
+          </Pressable>
+          <Pressable style={[styles.btn, { backgroundColor: c.earn }]} onPress={() => setRestoreOpen(true)}>
+            <Text style={styles.btnText}>📥 Restore</Text>
+          </Pressable>
+        </View>
       </View>
+      {restoreOpen && (
+        <Modal visible animationType="slide" transparent>
+          <View style={{ flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <View style={{ margin: 20, backgroundColor: c.surface, borderRadius: 12, padding: 20 }}>
+              <Text style={{ ...styles.meta, fontSize: 18, fontWeight: '600', marginBottom: 12 }}>Paste backup JSON</Text>
+              <TextInput
+                style={{ ...styles.meta, borderWidth: 1, borderColor: c.border, borderRadius: 8, padding: 12, minHeight: 120, textAlignVertical: 'top', fontFamily: 'monospace', fontSize: 12 }}
+                multiline
+                value={restoreJson}
+                onChangeText={setRestoreJson}
+                placeholder='{"version":1,"wallet":[...],"txns":[...],"hidden":[...],"learnt":{...}}'
+              />
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
+                <Pressable style={[styles.btn, { backgroundColor: c.muted }]} onPress={() => { setRestoreJson(''); setRestoreOpen(false); }}>
+                  <Text style={styles.btnText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={[styles.btn, { backgroundColor: c.danger }]} onPress={doRestore}>
+                  <Text style={styles.btnText}>Restore</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
